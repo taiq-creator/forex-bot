@@ -669,14 +669,12 @@ def main():
 
         st.markdown("---")
 
-        auto_refresh = st.checkbox("⚡ Cập nhật thời gian thực", value=True)
-        if auto_refresh:
-            refresh_sec = st.select_slider(
-                "Độ trễ (giây)", options=[2, 3, 5, 10, 30], value=3
-            )
-            st.caption(f"🔄 Tự động làm mới mỗi {refresh_sec}s")
-        else:
-            refresh_sec = None
+        st.markdown("""
+        <div style="background:rgba(67,160,71,0.08);border:1px solid rgba(67,160,71,0.3);
+                    border-radius:8px;padding:8px 12px;font-size:12px;color:#2e7d32;font-weight:600">
+        ⚡ Đang cập nhật thời gian thực
+        </div>
+        """, unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -707,218 +705,178 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    # ── Placeholder cho đồng hồ đếm ngược real-time ──
-    countdown_placeholder = st.empty()
-
-    # ── Tải dữ liệu (không spinner khi real-time) ──
+    # ── Định dạng số thập phân theo loại tài sản ──
     ticker = PAIRS[pair]
-    df_raw = fetch_ohlcv(ticker, interval, period)
-    if df_raw.empty:
-        with st.spinner("Đang tải lần đầu..."):
-            df_raw = fetch_ohlcv(ticker, interval, period)
 
-    if df_raw.empty:
-        st.error("❌ Không thể tải dữ liệu. Kiểm tra kết nối internet.")
-        st.stop()
+    if ticker in ("BTC-USD", "ETH-USD"):
+        fmt = lambda v: f"{v:,.2f}"
+    elif ticker in ("GC=F", "SI=F", "CL=F", "BZ=F"):
+        fmt = lambda v: f"{v:,.3f}"
+    elif "JPY" in ticker:
+        fmt = lambda v: f"{v:,.3f}"
+    else:
+        fmt = lambda v: f"{v:.5f}"
 
-    # ── Hiển thị trạng thái LIVE ──
-    if auto_refresh:
-        if "tick_count" not in st.session_state:
-            st.session_state.tick_count = 0
-        st.session_state.tick_count += 1
-        tick = st.session_state.tick_count
+    # ══════════════════════════════════════════════
+    # FRAGMENT: cập nhật mượt mà, không nháy màn hình
+    # run_every=3 → tự gọi lại mỗi 3 giây
+    # ══════════════════════════════════════════════
+    @st.fragment(run_every=3)
+    def live_dashboard():
+        # Tải dữ liệu mới
+        df_raw = fetch_ohlcv(ticker, interval, period)
+        if df_raw.empty:
+            st.error("❌ Không thể tải dữ liệu.")
+            return
+
+        df = resample_4h(df_raw) if tf_short == "H4" else df_raw.copy()
+        df = add_indicators(df)
+        if len(df) < 30:
+            st.warning("⚠️ Không đủ dữ liệu.")
+            return
+
+        sig = compute_signal(df)
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        price = float(last["Close"])
+        change_pct = (price - float(prev["Close"])) / float(prev["Close"]) * 100
         now_str = datetime.now().strftime("%H:%M:%S")
-        countdown_placeholder.markdown(f"""
+
+        # ── Thanh LIVE ──
+        st.markdown(f"""
         <div style="display:flex;align-items:center;gap:10px;
                     background:#e8f5e9;border:1px solid #a5d6a7;
-                    border-radius:8px;padding:8px 14px;margin-bottom:8px">
+                    border-radius:8px;padding:7px 14px;margin-bottom:12px">
           <div style="width:8px;height:8px;background:#43a047;border-radius:50%;
                       animation:pulse 1s infinite;flex-shrink:0"></div>
           <span style="font-family:monospace;font-size:12px;color:#2e7d32;font-weight:600">
-            ⚡ LIVE · Cập nhật lúc {now_str} · #{tick} · Làm mới sau {refresh_sec}s
+            ⚡ LIVE · Cập nhật lúc {now_str} · {pair} {tf_short}
           </span>
         </div>
         <style>@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:0.4}}}}</style>
         """, unsafe_allow_html=True)
 
-    # Resample 4H nếu cần
-    if tf_short == "H4":
-        df = resample_4h(df_raw)
-    else:
-        df = df_raw.copy()
+        # ── Metrics ──
+        st.markdown(f"### 📍 {pair} · {tf_short}")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Giá hiện tại", fmt(price), f"{change_pct:+.2f}%")
+        c2.metric("High (kỳ)", fmt(float(last["High"])))
+        c3.metric("Low (kỳ)", fmt(float(last["Low"])))
+        c4.metric("ATR", fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "N/A")
+        c5.metric("Cập nhật", now_str)
 
-    df = add_indicators(df)
+        st.markdown("---")
 
-    if len(df) < 30:
-        st.warning("⚠️ Không đủ dữ liệu để tính chỉ báo. Thử khung thời gian khác.")
-        st.stop()
-
-    # Tính tín hiệu
-    sig = compute_signal(df)
-
-    # ═══ HÀNG 1: Giá hiện tại ═══
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-    price = float(last["Close"])
-    prev_price = float(prev["Close"])
-    change = price - prev_price
-    change_pct = (change / prev_price) * 100
-
-    # ── Định dạng số thập phân theo loại tài sản ──
-    ticker_used = PAIRS[pair]
-    if ticker_used in ("BTC-USD", "ETH-USD"):
-        fmt = lambda v: f"{v:,.2f}"
-    elif ticker_used in ("GC=F", "SI=F", "CL=F", "BZ=F"):
-        fmt = lambda v: f"{v:,.3f}"
-    elif "JPY" in ticker_used:
-        fmt = lambda v: f"{v:,.3f}"
-    else:
-        fmt = lambda v: f"{v:.5f}"
-
-    st.markdown(f"### 📍 {pair} · {tf_short}")
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-    m1 = col1.empty()
-    m2 = col2.empty()
-    m3 = col3.empty()
-    m4 = col4.empty()
-    m5 = col5.empty()
-    m1.metric("Giá hiện tại", fmt(price), f"{change_pct:+.2f}%")
-    m2.metric("High (kỳ)", fmt(float(last["High"])))
-    m3.metric("Low (kỳ)", fmt(float(last["Low"])))
-    m4.metric("ATR", fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "N/A")
-    m5.metric("Cập nhật", datetime.now().strftime("%H:%M:%S"))
-
-    st.markdown("---")
-
-    # ═══ HÀNG 2: TÍN HIỆU + CHỈ BÁO ═══
-    col_sig, col_ind = st.columns([1, 2])
-
-    with col_sig:
-        action = sig["action"]
-        conf = sig["confidence"]
-        css_class = "signal-buy" if action == "BUY" else "signal-sell" if action == "SELL" else "signal-neutral"
-        emoji = "📈" if action == "BUY" else "📉" if action == "SELL" else "⏸"
-        color = "#2e7d32" if action == "BUY" else "#c62828" if action == "SELL" else "#e65100"
-        label = "TÍN HIỆU MUA" if action == "BUY" else "TÍN HIỆU BÁN" if action == "SELL" else "TRUNG TÍNH"
-
-        st.markdown(f"""
-        <div class="{css_class}">
-          <div style="font-size:11px;font-family:monospace;color:#4a7a99;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">
-            Tín hiệu giao dịch
-          </div>
-          <div style="font-size:36px;font-weight:800;color:{color};letter-spacing:-1px">
-            {emoji} {label}
-          </div>
-          <div style="font-size:22px;font-weight:700;color:{color};margin-top:4px">
-            {conf}% Tin cậy
-          </div>
-          <div style="font-family:monospace;font-size:11px;color:#4a7a99;margin-top:8px">
-            Score: {sig['score']:+d} / 10 | {pair} {tf_short}
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Mức giá
-        st.markdown("**📊 Mức giá giao dịch**")
-        g1, g2, g3 = st.columns(3)
-        g1.metric("📍 Entry", fmt(sig['entry']))
-        g2.metric("🎯 Take Profit", fmt(sig['tp']))
-        g3.metric("🛑 Stop Loss", fmt(sig['sl']))
-
-        rr = abs(sig['tp'] - sig['entry']) / abs(sig['sl'] - sig['entry']) if abs(sig['sl'] - sig['entry']) > 0 else 0
-        st.caption(f"Risk/Reward ratio: 1:{rr:.1f}")
-
-        if use_telegram and analyze_btn:
-            sent = send_telegram(pair, sig)
-            if sent:
-                st.success("✅ Đã gửi Telegram!")
-            else:
-                st.warning("⚠️ Chưa cấu hình Telegram (xem .env)")
-
-    with col_ind:
-        st.markdown("**🔧 Chỉ báo kỹ thuật chi tiết**")
-
-        ind_data = {
-            "RSI (14)": (f"{sig['rsi']:.1f}", sig['signals'].get('RSI', ('',''))[0]),
-            "MACD": (f"{sig['macd']:.5f}", sig['signals'].get('MACD', ('',''))[0]),
-            "EMA 20/50": (f"{fmt(float(last['EMA_20']))} / {fmt(float(last['EMA_50']))}",
-                          sig['signals'].get('EMA 20/50', ('',''))[0]),
-            "EMA 200": (fmt(float(last['EMA_200'])), sig['signals'].get('EMA 200', ('',''))[0]),
-            "Bollinger": (f"{fmt(float(last['BB_upper']))} / {fmt(float(last['BB_lower']))}",
-                          sig['signals'].get('Bollinger', ('',''))[0]),
-            "Stochastic %K": (f"{sig['stoch_k']:.1f}", sig['signals'].get('Stochastic', ('',''))[0]),
-            "ATR (14)": (f"{sig['atr']:.5f}", "📊 Biến động"),
-        }
-
-        for name, (val, signal_str) in ind_data.items():
-            card_class = (
-                "ind-card bullish" if "🟢" in signal_str
-                else "ind-card bearish" if "🔴" in signal_str
-                else "ind-card neutral"
-            )
+        # ── Tín hiệu + Chỉ báo ──
+        col_sig, col_ind = st.columns([1, 2])
+        with col_sig:
+            action = sig["action"]
+            conf   = sig["confidence"]
+            css    = "signal-buy" if action=="BUY" else "signal-sell" if action=="SELL" else "signal-neutral"
+            emoji  = "📈" if action=="BUY" else "📉" if action=="SELL" else "⏸"
+            color  = "#2e7d32" if action=="BUY" else "#c62828" if action=="SELL" else "#e65100"
+            label  = "TÍN HIỆU MUA" if action=="BUY" else "TÍN HIỆU BÁN" if action=="SELL" else "TRUNG TÍNH"
             st.markdown(f"""
-            <div class="{card_class}">
-              <span style="color:#5a7a9a;font-family:monospace;font-size:12px;font-weight:500">{name}</span>
-              <span style="color:#0d47a1;font-family:monospace;font-size:13px;font-weight:700">{val}</span>
-              <span style="font-size:12px">{signal_str}</span>
+            <div class="{css}">
+              <div style="font-size:11px;font-family:monospace;color:#4a7a99;
+                          letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">
+                Tín hiệu giao dịch
+              </div>
+              <div style="font-size:36px;font-weight:800;color:{color};letter-spacing:-1px">
+                {emoji} {label}
+              </div>
+              <div style="font-size:22px;font-weight:700;color:{color};margin-top:4px">
+                {conf}% Tin cậy
+              </div>
+              <div style="font-family:monospace;font-size:11px;color:#4a7a99;margin-top:8px">
+                Score: {sig['score']:+d} / 10 | {pair} {tf_short}
+              </div>
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown("---")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("**📊 Mức giá giao dịch**")
+            g1, g2, g3 = st.columns(3)
+            g1.metric("📍 Entry",       fmt(sig["entry"]))
+            g2.metric("🎯 Take Profit", fmt(sig["tp"]))
+            g3.metric("🛑 Stop Loss",   fmt(sig["sl"]))
+            rr = abs(sig["tp"]-sig["entry"]) / max(abs(sig["sl"]-sig["entry"]), 1e-10)
+            st.caption(f"Risk/Reward ratio: 1:{rr:.1f}")
 
-    # ═══ BIỂU ĐỒ REAL-TIME ═══
-    st.markdown("**📈 Biểu đồ nến — Cập nhật thời gian thực**")
-    chart_placeholder = st.empty()
-    fig = build_chart(df, pair)
-    chart_placeholder.plotly_chart(fig, use_container_width=True)
+        with col_ind:
+            st.markdown("**🔧 Chỉ báo kỹ thuật chi tiết**")
+            ind_data = {
+                "RSI (14)":     (f"{sig['rsi']:.1f}",   sig["signals"].get("RSI",("",""))[0]),
+                "MACD":         (f"{sig['macd']:.5f}",  sig["signals"].get("MACD",("",""))[0]),
+                "EMA 20/50":    (f"{fmt(float(last['EMA_20']))} / {fmt(float(last['EMA_50']))}",
+                                 sig["signals"].get("EMA 20/50",("",""))[0]),
+                "EMA 200":      (fmt(float(last["EMA_200"])), sig["signals"].get("EMA 200",("",""))[0]),
+                "Bollinger":    (f"{fmt(float(last['BB_upper']))} / {fmt(float(last['BB_lower']))}",
+                                 sig["signals"].get("Bollinger",("",""))[0]),
+                "Stochastic %K":(f"{sig['stoch_k']:.1f}", sig["signals"].get("Stochastic",("",""))[0]),
+                "ATR (14)":     (fmt(sig["atr"]), "📊 Biến động"),
+            }
+            for name, (val, signal_str) in ind_data.items():
+                card_cls = ("ind-card bullish" if "🟢" in signal_str
+                            else "ind-card bearish" if "🔴" in signal_str
+                            else "ind-card neutral")
+                st.markdown(f"""
+                <div class="{card_cls}">
+                  <span style="color:#5a7a9a;font-family:monospace;font-size:12px;font-weight:500">{name}</span>
+                  <span style="color:#0d47a1;font-family:monospace;font-size:13px;font-weight:700">{val}</span>
+                  <span style="font-size:12px">{signal_str}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
-    # ═══ AI PHÂN TÍCH ═══
+        st.markdown("---")
+
+        # ── Biểu đồ ──
+        st.markdown("**📈 Biểu đồ nến**")
+        fig = build_chart(df, pair)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ── OHLCV table ──
+        with st.expander("📋 Dữ liệu OHLCV gần nhất"):
+            st.dataframe(
+                df.tail(20)[["Open","High","Low","Close","Volume",
+                             "RSI","MACD","EMA_20","EMA_50"]].round(5),
+                use_container_width=True,
+            )
+
+        # ── Footer ──
+        st.markdown(f"""
+        <div style="text-align:center;font-family:monospace;font-size:11px;color:#7a9ab5;
+                    background:#ffffff;border:1px solid #dce8f5;border-radius:8px;
+                    padding:10px;margin-top:8px">
+          📊 ForexAI Bot &nbsp;·&nbsp; Yahoo Finance &nbsp;·&nbsp;
+          Groq Llama 3 (Free) &nbsp;·&nbsp; 🕐 {now_str}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Gọi fragment — tự cập nhật mỗi 3 giây, không nháy màn hình
+    live_dashboard()
+
+    # ── AI Phân tích (ngoài fragment vì chỉ chạy khi bấm nút) ──
     if use_ai and analyze_btn:
         st.markdown("---")
         st.markdown("**🤖 Phân tích AI — Groq Llama 3.3 70B (Miễn phí)**")
-        with st.spinner("Claude đang phân tích..."):
-            analysis = get_ai_analysis(pair, tf_short, sig)
+        with st.spinner("Đang phân tích..."):
+            df_ai_raw = fetch_ohlcv(ticker, interval, period)
+            df_ai = resample_4h(df_ai_raw) if tf_short=="H4" else df_ai_raw.copy()
+            df_ai = add_indicators(df_ai)
+            sig_ai = compute_signal(df_ai)
+            analysis = get_ai_analysis(pair, tf_short, sig_ai)
         st.markdown(f"""
         <div class="ai-box">
-          <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
-                      color:#1565c0;margin-bottom:10px;font-family:monospace">
-            🤖 CLAUDE AI ANALYSIS
+          <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;
+                      text-transform:uppercase;color:#1565c0;margin-bottom:10px;font-family:monospace">
+            🤖 GROQ AI ANALYSIS
           </div>
           {analysis}
         </div>
         """, unsafe_allow_html=True)
-
     elif not analyze_btn:
-        st.info("👆 Bấm **⚡ Phân tích ngay** để bắt đầu phân tích AI và xem tín hiệu đầy đủ.")
-
-    # ═══ THỐNG KÊ PHIÊN ═══
-    with st.expander("📋 Dữ liệu OHLCV gần nhất"):
-        st.dataframe(
-            df.tail(20)[["Open", "High", "Low", "Close", "Volume",
-                          "RSI", "MACD", "EMA_20", "EMA_50"]].round(5),
-            use_container_width=True,
-        )
-
-    # Footer
-    footer_placeholder = st.empty()
-    footer_placeholder.markdown(f"""
-    <div style="text-align:center;font-family:monospace;font-size:11px;color:#7a9ab5;
-                background:#ffffff;border:1px solid #dce8f5;border-radius:8px;padding:10px;margin-top:8px">
-      📊 ForexAI Bot &nbsp;·&nbsp; Dữ liệu: Yahoo Finance &nbsp;·&nbsp; AI: Groq Llama 3 (Free) &nbsp;·&nbsp;
-      🕐 {datetime.now().strftime('%H:%M:%S %d/%m/%Y')} UTC+7
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════
-    # REAL-TIME — dùng st.rerun() sau mỗi N giây
-    # ══════════════════════════════════════════════
-    if auto_refresh:
-        time.sleep(refresh_sec)
-        fetch_ohlcv.clear()   # xóa cache để lấy dữ liệu mới
-        st.rerun()            # reload toàn bộ app — sạch, không lỗi
+        st.info("👆 Bấm **⚡ Phân tích ngay** để xem nhận định AI.")
 
 
 if __name__ == "__main__":
