@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════╗
 ║         FOREX AI BOT — Python + Streamlit                ║
-║  Dữ liệu thật từ yfinance | Chỉ báo kỹ thuật thật       ║
+║  Dữ liệu Twelve Data (~1s) | Fallback Yahoo Finance      ║
 ║  Phân tích AI bằng Claude | Cảnh báo tín hiệu            ║
 ╚══════════════════════════════════════════════════════════╝
 
@@ -14,6 +14,7 @@ CHẠY:
 CẤU HÌNH API (tùy chọn):
   Tạo file .env cùng thư mục:
     GROQ_API_KEY=gsk_xxxxx         (miễn phí tại console.groq.com)
+    TWELVE_DATA_API_KEY=xxxxx      (miễn phí tại twelvedata.com)
     TELEGRAM_BOT_TOKEN=xxxxx       (nếu muốn cảnh báo Telegram)
     TELEGRAM_CHAT_ID=xxxxx
 """
@@ -36,9 +37,10 @@ try:
 except ImportError:
     pass
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "")
+TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ── Cấu hình trang ───────────────────────────────────────
 st.set_page_config(
@@ -208,54 +210,111 @@ st.markdown("""
 #  CÁC HÀM DỮ LIỆU
 # ════════════════════════════════════════════════════════
 
+# symbol: (twelve_data_symbol, yfinance_fallback, type)
 PAIRS = {
     # ── Forex Majors ──────────────────────────
-    "🇪🇺 EUR/USD": "EURUSD=X",
-    "🇬🇧 GBP/USD": "GBPUSD=X",
-    "🇯🇵 USD/JPY": "JPY=X",
-    "🇦🇺 AUD/USD": "AUDUSD=X",
-    "🇨🇭 USD/CHF": "CHF=X",
-    "🇨🇦 USD/CAD": "CAD=X",
-    "🇳🇿 NZD/USD": "NZDUSD=X",
+    "🇪🇺 EUR/USD": ("EUR/USD",  "EURUSD=X",  "forex"),
+    "🇬🇧 GBP/USD": ("GBP/USD",  "GBPUSD=X",  "forex"),
+    "🇯🇵 USD/JPY": ("USD/JPY",  "JPY=X",     "forex"),
+    "🇦🇺 AUD/USD": ("AUD/USD",  "AUDUSD=X",  "forex"),
+    "🇨🇭 USD/CHF": ("USD/CHF",  "CHF=X",     "forex"),
+    "🇨🇦 USD/CAD": ("USD/CAD",  "CAD=X",     "forex"),
+    "🇳🇿 NZD/USD": ("NZD/USD",  "NZDUSD=X",  "forex"),
     # ── Forex Crosses ─────────────────────────
-    "🇪🇺 EUR/GBP": "EURGBP=X",
-    "🇪🇺 EUR/JPY": "EURJPY=X",
-    "🇬🇧 GBP/JPY": "GBPJPY=X",
-    "🇦🇺 AUD/JPY": "AUDJPY=X",
-    "🇪🇺 EUR/AUD": "EURAUD=X",
+    "🇪🇺 EUR/GBP": ("EUR/GBP",  "EURGBP=X",  "forex"),
+    "🇪🇺 EUR/JPY": ("EUR/JPY",  "EURJPY=X",  "forex"),
+    "🇬🇧 GBP/JPY": ("GBP/JPY",  "GBPJPY=X",  "forex"),
+    "🇦🇺 AUD/JPY": ("AUD/JPY",  "AUDJPY=X",  "forex"),
+    "🇪🇺 EUR/AUD": ("EUR/AUD",  "EURAUD=X",  "forex"),
     # ── Kim loại quý ──────────────────────────
-    "🥇 Vàng (XAU/USD)":  "GC=F",
-    "🥈 Bạc (XAG/USD)":   "SI=F",
+    "🥇 Vàng (XAU/USD)":   ("XAU/USD", "GC=F",    "commodity"),
+    "🥈 Bạc (XAG/USD)":    ("XAG/USD", "SI=F",    "commodity"),
     # ── Năng lượng ────────────────────────────
-    "🛢️ Dầu WTI (CL)":    "CL=F",
-    "🛢️ Dầu Brent (BZ)":  "BZ=F",
+    "🛢️ Dầu WTI (CL)":     ("WTI/USD", "CL=F",    "commodity"),
+    "🛢️ Dầu Brent (BZ)":   ("BRENT/USD","BZ=F",   "commodity"),
     # ── Crypto ────────────────────────────────
-    "₿  Bitcoin (BTC/USD)":  "BTC-USD",
-    "Ξ  Ethereum (ETH/USD)": "ETH-USD",
+    "₿  Bitcoin (BTC/USD)":  ("BTC/USD", "BTC-USD", "crypto"),
+    "Ξ  Ethereum (ETH/USD)": ("ETH/USD", "ETH-USD", "crypto"),
 }
 
+# interval: (twelve_data_interval, yf_interval, yf_period, outputsize)
 TIMEFRAMES = {
-    "M15 (15 phút)": ("15m", "5d"),
-    "H1 (1 giờ)":    ("1h",  "10d"),
-    "H4 (4 giờ)":    ("1h",  "30d"),   # yfinance không có 4h, dùng 1h + resample
-    "D1 (Ngày)":     ("1d",  "180d"),
-    "W1 (Tuần)":     ("1wk", "730d"),
+    "M15 (15 phút)": ("15min", "15m",  "5d",   200),
+    "H1 (1 giờ)":    ("1h",   "1h",   "10d",  200),
+    "H4 (4 giờ)":    ("4h",   "1h",   "30d",  200),
+    "D1 (Ngày)":     ("1day", "1d",   "180d", 200),
+    "W1 (Tuần)":     ("1week","1wk",  "730d", 100),
 }
 
 @st.cache_data(ttl=3)    # cache 3 giây — real-time
-def fetch_ohlcv(ticker: str, interval: str, period: str) -> pd.DataFrame:
-    """Tải dữ liệu OHLCV từ Yahoo Finance."""
+def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd.DataFrame:
+    """Tải dữ liệu từ Twelve Data API (~1 giây độ trễ)."""
+    if not TWELVE_DATA_API_KEY:
+        return pd.DataFrame()
     try:
-        df = yf.download(ticker, interval=interval, period=period,
+        url = "https://api.twelvedata.com/time_series"
+        params = {
+            "symbol":     td_symbol,
+            "interval":   interval,
+            "outputsize": outputsize,
+            "apikey":     TWELVE_DATA_API_KEY,
+            "format":     "JSON",
+            "order":      "ASC",
+        }
+        resp = requests.get(url, params=params, timeout=10)
+        data = resp.json()
+        if data.get("status") == "error" or "values" not in data:
+            return pd.DataFrame()
+        rows = data["values"]
+        df = pd.DataFrame(rows)
+        df["datetime"] = pd.to_datetime(df["datetime"])
+        df = df.set_index("datetime")
+        df = df.rename(columns={
+            "open": "Open", "high": "High",
+            "low": "Low", "close": "Close", "volume": "Volume"
+        })
+        for col in ["Open","High","Low","Close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["Volume"] = pd.to_numeric(df.get("Volume", 0), errors="coerce").fillna(0)
+        return df[["Open","High","Low","Close","Volume"]].dropna()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=15)   # Yahoo Finance cache 15 giây (fallback)
+def fetch_ohlcv_yahoo(yf_ticker: str, yf_interval: str, yf_period: str) -> pd.DataFrame:
+    """Tải dữ liệu từ Yahoo Finance (fallback)."""
+    try:
+        import yfinance as yf
+        df = yf.download(yf_ticker, interval=yf_interval, period=yf_period,
                          progress=False, auto_adjust=True)
         if df.empty:
             return pd.DataFrame()
         df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-        df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-        return df
-    except Exception as e:
-        st.error(f"Lỗi tải dữ liệu: {e}")
+        return df[["Open","High","Low","Close","Volume"]].dropna()
+    except Exception:
         return pd.DataFrame()
+
+
+def fetch_ohlcv(pair_name: str, tf_label: str) -> tuple[pd.DataFrame, str]:
+    """
+    Lấy dữ liệu: ưu tiên Twelve Data, fallback Yahoo Finance.
+    Trả về (DataFrame, source_name)
+    """
+    td_sym, yf_ticker, _ = PAIRS[pair_name]
+    td_interval, yf_interval, yf_period, outputsize = TIMEFRAMES[tf_label]
+
+    # Thử Twelve Data trước
+    if TWELVE_DATA_API_KEY:
+        df = fetch_ohlcv_twelvedata(td_sym, td_interval, outputsize)
+        if not df.empty:
+            return df, "Twelve Data ⚡"
+
+    # Fallback Yahoo Finance
+    df = fetch_ohlcv_yahoo(yf_ticker, yf_interval, yf_period)
+    if td_label := "H4 (4 giờ)" if tf_label == "H4 (4 giờ)" else "":
+        pass
+    return df, "Yahoo Finance"
 
 
 def resample_4h(df: pd.DataFrame) -> pd.DataFrame:
@@ -310,40 +369,9 @@ def calc_atr(high, low, close, period=14):
 def calc_ema(close: pd.Series, period: int) -> pd.Series:
     return close.ewm(span=period, adjust=False).mean()
 
-def calc_ichimoku(df: pd.DataFrame) -> pd.DataFrame:
-    """Tính Ichimoku Cloud."""
-    high, low, close = df["High"], df["Low"], df["Close"]
-    # Tenkan-sen (9)
-    df["Ichi_Tenkan"]  = (high.rolling(9).max()  + low.rolling(9).min())  / 2
-    # Kijun-sen (26)
-    df["Ichi_Kijun"]   = (high.rolling(26).max() + low.rolling(26).min()) / 2
-    # Senkou Span A
-    df["Ichi_SpanA"]   = ((df["Ichi_Tenkan"] + df["Ichi_Kijun"]) / 2).shift(26)
-    # Senkou Span B
-    df["Ichi_SpanB"]   = ((high.rolling(52).max() + low.rolling(52).min()) / 2).shift(26)
-    # Chikou
-    df["Ichi_Chikou"]  = close.shift(-26)
-    return df
-
-def calc_fibonacci(df: pd.DataFrame, window: int = 100) -> dict:
-    """Tính các mức Fibonacci Retracement."""
-    recent = df.tail(window)
-    high   = float(recent["High"].max())
-    low    = float(recent["Low"].min())
-    diff   = high - low
-    return {
-        "High":   high,
-        "Low":    low,
-        "0.236":  high - 0.236 * diff,
-        "0.382":  high - 0.382 * diff,
-        "0.500":  high - 0.500 * diff,
-        "0.618":  high - 0.618 * diff,
-        "0.786":  high - 0.786 * diff,
-    }
-
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Thêm tất cả chỉ báo vào DataFrame."""
-    if len(df) < 52:
+    if len(df) < 50:
         return df
     close, high, low = df["Close"], df["High"], df["Low"]
 
@@ -355,52 +383,8 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["BB_upper"], df["BB_mid"], df["BB_lower"]   = calc_bollinger(close)
     df["Stoch_K"], df["Stoch_D"]                   = calc_stochastic(high, low, close)
     df["ATR"]          = calc_atr(high, low, close)
-    df = calc_ichimoku(df)
 
     return df
-
-@st.cache_data(ttl=3600)
-def fetch_economic_calendar() -> list:
-    """Lấy lịch kinh tế từ Forex Factory RSS."""
-    try:
-        resp = requests.get(
-            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            events = []
-            for e in data[:20]:
-                impact = e.get("impact", "").lower()
-                if impact in ("high", "medium"):
-                    events.append({
-                        "date":     e.get("date", ""),
-                        "time":     e.get("time", ""),
-                        "country":  e.get("country", ""),
-                        "title":    e.get("title", ""),
-                        "impact":   impact,
-                        "forecast": e.get("forecast", "-"),
-                        "previous": e.get("previous", "-"),
-                    })
-            return events
-    except:
-        pass
-    # Fallback: mock data nếu không lấy được
-    return [
-        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "14:30",
-         "country": "USD", "title": "Non-Farm Payrolls",
-         "impact": "high", "forecast": "185K", "previous": "175K"},
-        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "16:00",
-         "country": "EUR", "title": "ECB Interest Rate Decision",
-         "impact": "high", "forecast": "4.50%", "previous": "4.50%"},
-        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "09:00",
-         "country": "GBP", "title": "UK CPI y/y",
-         "impact": "medium", "forecast": "2.1%", "previous": "2.3%"},
-        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "23:50",
-         "country": "JPY", "title": "BOJ Policy Rate",
-         "impact": "high", "forecast": "0.10%", "previous": "0.10%"},
-    ]
 
 
 # ════════════════════════════════════════════════════════
@@ -462,20 +446,6 @@ def compute_signal(df: pd.DataFrame) -> dict:
         signals["Stochastic"] = ("🔴 Quá mua", "bearish"); score -= 1
     else:
         signals["Stochastic"] = ("⚪ Trung tính", "neutral")
-
-    # Ichimoku
-    if "Ichi_Tenkan" in df.columns and not pd.isna(last["Ichi_Tenkan"]):
-        tenkan, kijun = last["Ichi_Tenkan"], last["Ichi_Kijun"]
-        span_a, span_b = last["Ichi_SpanA"], last["Ichi_SpanB"]
-        c2 = last["Close"]
-        if tenkan > kijun and c2 > max(span_a, span_b) if not pd.isna(span_a) else False:
-            signals["Ichimoku"] = ("🟢 Trên mây Kumo", "bullish"); score += 2
-        elif tenkan < kijun and c2 < min(span_a, span_b) if not pd.isna(span_a) else False:
-            signals["Ichimoku"] = ("🔴 Dưới mây Kumo", "bearish"); score -= 2
-        elif tenkan > kijun:
-            signals["Ichimoku"] = ("🟢 Tenkan > Kijun", "bullish"); score += 1
-        else:
-            signals["Ichimoku"] = ("🔴 Tenkan < Kijun", "bearish"); score -= 1
 
     # Tổng hợp
     if score >= 4:
@@ -556,27 +526,6 @@ def build_chart(df: pd.DataFrame, pair: str) -> go.Figure:
                 line=dict(color=color, width=1.2),
                 opacity=0.8
             ), row=1, col=1)
-
-    # ── Ichimoku Cloud ──
-    if "Ichi_SpanA" in d.columns:
-        fig.add_trace(go.Scatter(
-            x=d.index, y=d["Ichi_SpanA"], name="Span A",
-            line=dict(color="rgba(67,160,71,0.6)", width=1),
-        ), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=d.index, y=d["Ichi_SpanB"], name="Span B",
-            line=dict(color="rgba(229,57,53,0.6)", width=1),
-            fill="tonexty",
-            fillcolor="rgba(150,200,150,0.08)"
-        ), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=d.index, y=d["Ichi_Tenkan"], name="Tenkan",
-            line=dict(color="#e91e63", width=1, dash="dot"),
-        ), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=d.index, y=d["Ichi_Kijun"], name="Kijun",
-            line=dict(color="#2196f3", width=1, dash="dot"),
-        ), row=1, col=1)
 
     # ── Bollinger Bands ──
     if "BB_upper" in d.columns:
@@ -774,31 +723,34 @@ def main():
 
         pair = st.selectbox("Cặp tiền tệ", list(PAIRS.keys()), index=0)
         tf_label = st.selectbox("Khung thời gian", list(TIMEFRAMES.keys()), index=2)
-        interval, period = TIMEFRAMES[tf_label]
         tf_short = tf_label.split(" ")[0]
 
         st.markdown("---")
 
-        st.markdown("""
-        <div style="background:rgba(67,160,71,0.08);border:1px solid rgba(67,160,71,0.3);
-                    border-radius:8px;padding:8px 12px;font-size:12px;color:#2e7d32;font-weight:600">
-        ⚡ Đang cập nhật thời gian thực
-        </div>
-        """, unsafe_allow_html=True)
+        if TWELVE_DATA_API_KEY:
+            st.markdown("""
+            <div style="background:rgba(67,160,71,0.1);border:1px solid rgba(67,160,71,0.4);
+                        border-radius:8px;padding:8px 12px;font-size:12px;
+                        color:#1b5e20;font-weight:600;text-align:center">
+            ⚡ Twelve Data · Độ trễ ~1s
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="background:rgba(255,152,0,0.1);border:1px solid rgba(255,152,0,0.4);
+                        border-radius:8px;padding:8px 12px;font-size:11px;color:#e65100">
+            ⚠️ Chưa có Twelve Data Key<br>
+            Dùng Yahoo Finance (~15s độ trễ)<br>
+            Lấy miễn phí: <b>twelvedata.com</b><br>
+            Thêm vào Secrets:<br>
+            <code style="background:#fff3e0;color:#bf360c">TWELVE_DATA_API_KEY = "xxx"</code>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
 
         use_ai = st.checkbox("🤖 Phân tích AI (Groq/Llama 3)", value=bool(GROQ_API_KEY))
-        use_telegram = st.checkbox("📱 Cảnh báo Telegram", value=bool(TELEGRAM_BOT_TOKEN))
-        if use_telegram and not TELEGRAM_BOT_TOKEN:
-            st.markdown("""
-            <div style="background:rgba(33,150,243,0.08);border:1px solid rgba(33,150,243,0.3);
-                        border-radius:8px;padding:8px;font-size:11px;color:#1565c0;margin-top:6px">
-            📱 Thêm vào Streamlit Secrets:<br>
-            <code style="background:#e3f2fd;color:#0d47a1">TELEGRAM_BOT_TOKEN = "xxx"</code><br>
-            <code style="background:#e3f2fd;color:#0d47a1">TELEGRAM_CHAT_ID = "xxx"</code>
-            </div>
-            """, unsafe_allow_html=True)
+        use_telegram = st.checkbox("📱 Gửi Telegram", value=False)
 
         if not GROQ_API_KEY:
             st.markdown("""
@@ -825,13 +777,13 @@ def main():
         """, unsafe_allow_html=True)
 
     # ── Định dạng số thập phân theo loại tài sản ──
-    ticker = PAIRS[pair]
+    _, _, asset_type = PAIRS[pair]
 
-    if ticker in ("BTC-USD", "ETH-USD"):
+    if asset_type == "crypto":
         fmt = lambda v: f"{v:,.2f}"
-    elif ticker in ("GC=F", "SI=F", "CL=F", "BZ=F"):
+    elif asset_type == "commodity":
         fmt = lambda v: f"{v:,.3f}"
-    elif "JPY" in ticker:
+    elif "JPY" in pair:
         fmt = lambda v: f"{v:,.3f}"
     else:
         fmt = lambda v: f"{v:.5f}"
@@ -843,12 +795,16 @@ def main():
     @st.fragment(run_every=3)
     def live_dashboard():
         # Tải dữ liệu mới
-        df_raw = fetch_ohlcv(ticker, interval, period)
+        df_raw, data_source = fetch_ohlcv(pair, tf_label)
         if df_raw.empty:
-            st.error("❌ Không thể tải dữ liệu.")
+            st.error("❌ Không thể tải dữ liệu. Kiểm tra API key hoặc kết nối mạng.")
             return
 
-        df = resample_4h(df_raw) if tf_short == "H4" else df_raw.copy()
+        # Twelve Data đã có 4H native — chỉ resample nếu dùng Yahoo
+        if tf_short == "H4" and data_source == "Yahoo Finance":
+            df = resample_4h(df_raw)
+        else:
+            df = df_raw.copy()
         df = add_indicators(df)
         if len(df) < 30:
             st.warning("⚠️ Không đủ dữ liệu.")
@@ -861,42 +817,6 @@ def main():
         change_pct = (price - float(prev["Close"])) / float(prev["Close"]) * 100
         now_str = datetime.now().strftime("%H:%M:%S")
 
-        # ── Phát âm thanh khi tín hiệu đổi ──
-        prev_action = st.session_state.get("prev_action", None)
-        if prev_action is not None and prev_action != sig["action"] and sig["action"] != "NEUTRAL":
-            sound_color = "#43a047" if sig["action"] == "BUY" else "#e53935"
-            sound_emoji = "📈" if sig["action"] == "BUY" else "📉"
-            st.markdown(f"""
-            <audio autoplay>
-              <source src="data:audio/wav;base64,
-                UklGRnoGAABXQVZFZm10IBAAAA...
-              " type="audio/wav">
-            </audio>
-            <script>
-              var ctx = new AudioContext();
-              var osc = ctx.createOscillator();
-              var gain = ctx.createGain();
-              osc.connect(gain); gain.connect(ctx.destination);
-              osc.frequency.value = {"880" if sig["action"] == "BUY" else "440"};
-              osc.type = "sine";
-              gain.gain.setValueAtTime(0.3, ctx.currentTime);
-              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-              osc.start(ctx.currentTime);
-              osc.stop(ctx.currentTime + 0.5);
-            </script>
-            <div style="background:{sound_color};color:white;padding:10px 16px;
-                        border-radius:10px;font-weight:700;font-size:14px;
-                        margin-bottom:10px;text-align:center;
-                        animation:fadeIn 0.3s ease">
-              {sound_emoji} TÍN HIỆU MỚI: {sig["action"]} — {pair}
-            </div>
-            <style>@keyframes fadeIn{{from{{opacity:0;transform:translateY(-8px)}}to{{opacity:1;transform:translateY(0)}}}}</style>
-            """, unsafe_allow_html=True)
-            # Gửi Telegram tự động khi tín hiệu đổi
-            if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-                send_telegram(pair, sig)
-        st.session_state["prev_action"] = sig["action"]
-
         # ── Thanh LIVE ──
         st.markdown(f"""
         <div style="display:flex;align-items:center;gap:10px;
@@ -905,7 +825,7 @@ def main():
           <div style="width:8px;height:8px;background:#43a047;border-radius:50%;
                       animation:pulse 1s infinite;flex-shrink:0"></div>
           <span style="font-family:monospace;font-size:12px;color:#2e7d32;font-weight:600">
-            ⚡ LIVE · Cập nhật lúc {now_str} · {pair} {tf_short}
+            ⚡ LIVE · {data_source} · {now_str} · {pair} {tf_short}
           </span>
         </div>
         <style>@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:0.4}}}}</style>
@@ -990,60 +910,6 @@ def main():
         fig = build_chart(df, pair)
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Fibonacci levels ──
-        with st.expander("📐 Fibonacci Retracement"):
-            fib2 = calc_fibonacci(df)
-            price_now = float(last["Close"])
-            fcols = st.columns(4)
-            for i, (level, val) in enumerate([
-                ("High",   fib2["High"]),
-                ("0.236",  fib2["0.236"]),
-                ("0.382",  fib2["0.382"]),
-                ("0.500",  fib2["0.500"]),
-                ("0.618",  fib2["0.618"]),
-                ("0.786",  fib2["0.786"]),
-                ("Low",    fib2["Low"]),
-            ]):
-                col = fcols[i % 4]
-                diff_pct = (price_now - val) / val * 100
-                color = "#2e7d32" if price_now > val else "#c62828"
-                col.markdown(f"""
-                <div style="background:#f8fafd;border:1px solid #dce8f5;border-radius:8px;
-                            padding:8px;text-align:center;margin-bottom:6px">
-                  <div style="font-size:10px;color:#5a7a9a;font-family:monospace">{level}</div>
-                  <div style="font-size:13px;font-weight:700;color:#0d47a1;font-family:monospace">{fmt(val)}</div>
-                  <div style="font-size:10px;color:{color}">{diff_pct:+.2f}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # ── Lịch kinh tế ──
-        with st.expander("⏰ Lịch kinh tế tuần này"):
-            events = fetch_economic_calendar()
-            if events:
-                for ev in events:
-                    impact_color = "#c62828" if ev["impact"] == "high" else "#f57c00"
-                    impact_label = "🔴 Cao" if ev["impact"] == "high" else "🟡 TB"
-                    st.markdown(f"""
-                    <div style="background:#ffffff;border:1px solid #dce8f5;
-                                border-left:4px solid {impact_color};
-                                border-radius:8px;padding:10px 14px;margin-bottom:6px;
-                                display:flex;justify-content:space-between;align-items:center">
-                      <div>
-                        <span style="font-family:monospace;font-size:11px;color:#5a7a9a">
-                          {ev["date"]} {ev["time"]} · {ev["country"]}
-                        </span><br>
-                        <span style="font-weight:600;font-size:13px;color:#1a2332">{ev["title"]}</span>
-                      </div>
-                      <div style="text-align:right;font-family:monospace;font-size:11px">
-                        <div>{impact_label}</div>
-                        <div style="color:#0d47a1">Dự báo: {ev["forecast"]}</div>
-                        <div style="color:#5a7a9a">Trước: {ev["previous"]}</div>
-                      </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("Không có sự kiện quan trọng tuần này.")
-
         # ── OHLCV table ──
         with st.expander("📋 Dữ liệu OHLCV gần nhất"):
             st.dataframe(
@@ -1057,7 +923,7 @@ def main():
         <div style="text-align:center;font-family:monospace;font-size:11px;color:#7a9ab5;
                     background:#ffffff;border:1px solid #dce8f5;border-radius:8px;
                     padding:10px;margin-top:8px">
-          📊 ForexAI Bot &nbsp;·&nbsp; Yahoo Finance &nbsp;·&nbsp;
+          📊 ForexAI Bot &nbsp;·&nbsp; {data_source} &nbsp;·&nbsp;
           Groq Llama 3 (Free) &nbsp;·&nbsp; 🕐 {now_str}
         </div>
         """, unsafe_allow_html=True)
@@ -1070,8 +936,11 @@ def main():
         st.markdown("---")
         st.markdown("**🤖 Phân tích AI — Groq Llama 3.3 70B (Miễn phí)**")
         with st.spinner("Đang phân tích..."):
-            df_ai_raw = fetch_ohlcv(ticker, interval, period)
-            df_ai = resample_4h(df_ai_raw) if tf_short=="H4" else df_ai_raw.copy()
+            df_ai_raw, _ = fetch_ohlcv(pair, tf_label)
+            if df_ai_raw.empty:
+                st.error("❌ Không thể tải dữ liệu để phân tích AI.")
+                return
+            df_ai = resample_4h(df_ai_raw) if (tf_short=="H4" and _=="Yahoo Finance") else df_ai_raw.copy()
             df_ai = add_indicators(df_ai)
             sig_ai = compute_signal(df_ai)
             analysis = get_ai_analysis(pair, tf_short, sig_ai)
