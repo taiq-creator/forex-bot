@@ -764,7 +764,7 @@ def main():
             """, unsafe_allow_html=True)
 
         st.markdown("---")
-        analyze_btn = st.button("⚡ Phân tích ngay", use_container_width=True)
+        analyze_btn = st.button("⚡ Phân tích ngay", width="stretch")
 
         st.markdown("---")
         st.markdown("""
@@ -908,14 +908,14 @@ def main():
         # ── Biểu đồ ──
         st.markdown("**📈 Biểu đồ nến**")
         fig = build_chart(df, pair)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # ── OHLCV table ──
         with st.expander("📋 Dữ liệu OHLCV gần nhất"):
             st.dataframe(
                 df.tail(20)[["Open","High","Low","Close","Volume",
                              "RSI","MACD","EMA_20","EMA_50"]].round(5),
-                use_container_width=True,
+                width="stretch",
             )
 
         # ── Footer ──
