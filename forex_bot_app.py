@@ -1,12 +1,12 @@
 """
 ╔══════════════════════════════════════════════════════════╗
 ║         FOREX AI BOT — Python + Streamlit                ║
-║  Dữ liệu Twelve Data (~1s) | Fallback Yahoo Finance      ║
+║  Dữ liệu Twelve Data (~1s) | Không độ trễ               ║
 ║  Phân tích AI bằng Claude | Cảnh báo tín hiệu            ║
 ╚══════════════════════════════════════════════════════════╝
 
 CÀI ĐẶT:
-  pip install streamlit yfinance pandas plotly python-dotenv requests
+  pip install streamlit pandas plotly python-dotenv requests
 
 CHẠY:
   streamlit run forex_bot_app.py
@@ -20,7 +20,6 @@ CẤU HÌNH API (tùy chọn):
 """
 
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -210,7 +209,7 @@ st.markdown("""
 #  CÁC HÀM DỮ LIỆU
 # ════════════════════════════════════════════════════════
 
-# symbol: (twelve_data_symbol, yfinance_fallback, type)
+# symbol: (twelve_data_symbol, yf_unused, type)
 PAIRS = {
     # ── Forex Majors ──────────────────────────
     "🇪🇺 EUR/USD": ("EUR/USD",  "EURUSD=X",  "forex"),
@@ -249,7 +248,9 @@ TIMEFRAMES = {
 @st.cache_data(ttl=3)    # cache 3 giây — real-time
 def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd.DataFrame:
     """Tải dữ liệu từ Twelve Data API (~1 giây độ trễ)."""
-    if not TWELVE_DATA_API_KEY:
+    # Đọc key trực tiếp mỗi lần — tránh cache key rỗng lúc khởi động
+    api_key = os.getenv("TWELVE_DATA_API_KEY", "")
+    if not api_key:
         return pd.DataFrame()
     try:
         url = "https://api.twelvedata.com/time_series"
@@ -257,7 +258,7 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
             "symbol":     td_symbol,
             "interval":   interval,
             "outputsize": outputsize,
-            "apikey":     TWELVE_DATA_API_KEY,
+            "apikey":     api_key,
             "format":     "JSON",
             "order":      "ASC",
         }
@@ -277,52 +278,25 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df["Volume"] = pd.to_numeric(df.get("Volume", 0), errors="coerce").fillna(0)
         return df[["Open","High","Low","Close","Volume"]].dropna()
-    except Exception:
+    except Exception as e:
+        st.error(f"❌ Twelve Data lỗi: {e}")
         return pd.DataFrame()
 
-
-@st.cache_data(ttl=15)   # Yahoo Finance cache 15 giây (fallback)
-def fetch_ohlcv_yahoo(yf_ticker: str, yf_interval: str, yf_period: str) -> pd.DataFrame:
-    """Tải dữ liệu từ Yahoo Finance (fallback)."""
-    try:
-        import yfinance as yf
-        df = yf.download(yf_ticker, interval=yf_interval, period=yf_period,
-                         progress=False, auto_adjust=True)
-        if df.empty:
-            return pd.DataFrame()
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-        return df[["Open","High","Low","Close","Volume"]].dropna()
-    except Exception:
-        return pd.DataFrame()
 
 
 def fetch_ohlcv(pair_name: str, tf_label: str) -> tuple[pd.DataFrame, str]:
     """
-    Lấy dữ liệu: ưu tiên Twelve Data, fallback Yahoo Finance.
+    Lấy dữ liệu từ Twelve Data.
     Trả về (DataFrame, source_name)
     """
-    td_sym, yf_ticker, _ = PAIRS[pair_name]
-    td_interval, yf_interval, yf_period, outputsize = TIMEFRAMES[tf_label]
-
-    # Thử Twelve Data trước
-    if TWELVE_DATA_API_KEY:
-        df = fetch_ohlcv_twelvedata(td_sym, td_interval, outputsize)
-        if not df.empty:
-            return df, "Twelve Data ⚡"
-
-    # Fallback Yahoo Finance
-    df = fetch_ohlcv_yahoo(yf_ticker, yf_interval, yf_period)
-    if td_label := "H4 (4 giờ)" if tf_label == "H4 (4 giờ)" else "":
-        pass
-    return df, "Yahoo Finance"
+    td_sym, _, __ = PAIRS[pair_name]
+    td_interval, _yf, _period, outputsize = TIMEFRAMES[tf_label]
+    df = fetch_ohlcv_twelvedata(td_sym, td_interval, outputsize)
+    if not df.empty:
+        return df, "Twelve Data ⚡"
+    return pd.DataFrame(), "Lỗi kết nối"
 
 
-def resample_4h(df: pd.DataFrame) -> pd.DataFrame:
-    """Resample 1h → 4h."""
-    return df.resample("4h").agg({
-        "Open": "first", "High": "max",
-        "Low": "min", "Close": "last", "Volume": "sum"
-    }).dropna()
 
 
 # ════════════════════════════════════════════════════════
@@ -712,7 +686,7 @@ def main():
                   color:#69f0ae;padding:4px 12px;border-radius:20px;font-size:10px;
                   letter-spacing:1.5px;font-family:monospace;font-weight:700">● LIVE</div>
       <div style="margin-left:auto;font-family:monospace;font-size:11px;color:rgba(255,255,255,0.6)">
-        Yahoo Finance · Claude AI
+        Twelve Data · Groq AI
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -727,25 +701,13 @@ def main():
 
         st.markdown("---")
 
-        if TWELVE_DATA_API_KEY:
-            st.markdown("""
-            <div style="background:rgba(67,160,71,0.1);border:1px solid rgba(67,160,71,0.4);
-                        border-radius:8px;padding:8px 12px;font-size:12px;
-                        color:#1b5e20;font-weight:600;text-align:center">
-            ⚡ Twelve Data · Độ trễ ~1s
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div style="background:rgba(255,152,0,0.1);border:1px solid rgba(255,152,0,0.4);
-                        border-radius:8px;padding:8px 12px;font-size:11px;color:#e65100">
-            ⚠️ Chưa có Twelve Data Key<br>
-            Dùng Yahoo Finance (~15s độ trễ)<br>
-            Lấy miễn phí: <b>twelvedata.com</b><br>
-            Thêm vào Secrets:<br>
-            <code style="background:#fff3e0;color:#bf360c">TWELVE_DATA_API_KEY = "xxx"</code>
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(67,160,71,0.1);border:1px solid rgba(67,160,71,0.4);
+                    border-radius:8px;padding:8px 12px;font-size:12px;
+                    color:#1b5e20;font-weight:600;text-align:center">
+        ⚡ Twelve Data · Độ trễ ~1s
+        </div>
+        """, unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -800,11 +762,7 @@ def main():
             st.error("❌ Không thể tải dữ liệu. Kiểm tra API key hoặc kết nối mạng.")
             return
 
-        # Twelve Data đã có 4H native — chỉ resample nếu dùng Yahoo
-        if tf_short == "H4" and data_source == "Yahoo Finance":
-            df = resample_4h(df_raw)
-        else:
-            df = df_raw.copy()
+        df = df_raw.copy()
         df = add_indicators(df)
         if len(df) < 30:
             st.warning("⚠️ Không đủ dữ liệu.")
@@ -940,7 +898,7 @@ def main():
             if df_ai_raw.empty:
                 st.error("❌ Không thể tải dữ liệu để phân tích AI.")
                 return
-            df_ai = resample_4h(df_ai_raw) if (tf_short=="H4" and _=="Yahoo Finance") else df_ai_raw.copy()
+            df_ai = df_ai_raw.copy()
             df_ai = add_indicators(df_ai)
             sig_ai = compute_signal(df_ai)
             analysis = get_ai_analysis(pair, tf_short, sig_ai)
