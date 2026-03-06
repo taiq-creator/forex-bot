@@ -721,8 +721,12 @@ def main():
         st.error("❌ Không thể tải dữ liệu. Kiểm tra kết nối internet.")
         st.stop()
 
-    # ── Hiển thị countdown real-time ──
+    # ── Hiển thị trạng thái LIVE ──
     if auto_refresh:
+        if "tick_count" not in st.session_state:
+            st.session_state.tick_count = 0
+        st.session_state.tick_count += 1
+        tick = st.session_state.tick_count
         now_str = datetime.now().strftime("%H:%M:%S")
         countdown_placeholder.markdown(f"""
         <div style="display:flex;align-items:center;gap:10px;
@@ -731,7 +735,7 @@ def main():
           <div style="width:8px;height:8px;background:#43a047;border-radius:50%;
                       animation:pulse 1s infinite;flex-shrink:0"></div>
           <span style="font-family:monospace;font-size:12px;color:#2e7d32;font-weight:600">
-            LIVE · Cập nhật lúc {now_str} · Làm mới sau {refresh_sec}s
+            ⚡ LIVE · Cập nhật lúc {now_str} · #{tick} · Làm mới sau {refresh_sec}s
           </span>
         </div>
         <style>@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:0.4}}}}</style>
@@ -909,70 +913,12 @@ def main():
     """, unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════
-    # REAL-TIME LOOP — cập nhật biểu đồ & chỉ báo
-    # mỗi 2-3 giây không reload toàn trang
+    # REAL-TIME — dùng st.rerun() sau mỗi N giây
     # ══════════════════════════════════════════════
     if auto_refresh:
-        import itertools
-        for tick in itertools.count():
-            time.sleep(refresh_sec)
-
-            # Xóa cache để lấy dữ liệu mới
-            fetch_ohlcv.clear()
-
-            # Tải lại dữ liệu
-            df_new_raw = fetch_ohlcv(ticker, interval, period)
-            if df_new_raw.empty:
-                continue
-
-            if tf_short == "H4":
-                df_new = resample_4h(df_new_raw)
-            else:
-                df_new = df_new_raw.copy()
-            df_new = add_indicators(df_new)
-            if len(df_new) < 30:
-                continue
-
-            sig_new = compute_signal(df_new)
-            last_new = df_new.iloc[-1]
-            prev_new = df_new.iloc[-2]
-            price_new = float(last_new["Close"])
-            chg_new = (price_new - float(prev_new["Close"])) / float(prev_new["Close"]) * 100
-
-            # Cập nhật giá metrics
-            m1.metric("Giá hiện tại", fmt(price_new), f"{chg_new:+.2f}%")
-            m2.metric("High (kỳ)", fmt(float(last_new["High"])))
-            m3.metric("Low (kỳ)", fmt(float(last_new["Low"])))
-            m4.metric("ATR", fmt(float(last_new["ATR"])) if not np.isnan(last_new["ATR"]) else "N/A")
-            m5.metric("Cập nhật", datetime.now().strftime("%H:%M:%S"))
-
-            # Cập nhật biểu đồ
-            fig_new = build_chart(df_new, pair)
-            chart_placeholder.plotly_chart(fig_new, use_container_width=True)
-
-            # Cập nhật countdown
-            now_str = datetime.now().strftime("%H:%M:%S")
-            countdown_placeholder.markdown(f"""
-            <div style="display:flex;align-items:center;gap:10px;
-                        background:#e8f5e9;border:1px solid #a5d6a7;
-                        border-radius:8px;padding:8px 14px;margin-bottom:8px">
-              <div style="width:8px;height:8px;background:#43a047;border-radius:50%;
-                          animation:pulse 1s infinite;flex-shrink:0"></div>
-              <span style="font-family:monospace;font-size:12px;color:#2e7d32;font-weight:600">
-                LIVE · Cập nhật lúc {now_str} · Tick #{tick+1} · {pair}
-              </span>
-            </div>
-            <style>@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:0.4}}}}</style>
-            """, unsafe_allow_html=True)
-
-            # Cập nhật footer
-            footer_placeholder.markdown(f"""
-            <div style="text-align:center;font-family:monospace;font-size:11px;color:#7a9ab5;
-                        background:#ffffff;border:1px solid #dce8f5;border-radius:8px;padding:10px;margin-top:8px">
-              📊 ForexAI Bot &nbsp;·&nbsp; ⚡ LIVE &nbsp;·&nbsp; Tick #{tick+1} &nbsp;·&nbsp;
-              🕐 {datetime.now().strftime('%H:%M:%S %d/%m/%Y')} UTC+7
-            </div>
-            """, unsafe_allow_html=True)
+        time.sleep(refresh_sec)
+        fetch_ohlcv.clear()   # xóa cache để lấy dữ liệu mới
+        st.rerun()            # reload toàn bộ app — sạch, không lỗi
 
 
 if __name__ == "__main__":
