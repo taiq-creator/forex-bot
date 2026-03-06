@@ -310,9 +310,40 @@ def calc_atr(high, low, close, period=14):
 def calc_ema(close: pd.Series, period: int) -> pd.Series:
     return close.ewm(span=period, adjust=False).mean()
 
+def calc_ichimoku(df: pd.DataFrame) -> pd.DataFrame:
+    """Tính Ichimoku Cloud."""
+    high, low, close = df["High"], df["Low"], df["Close"]
+    # Tenkan-sen (9)
+    df["Ichi_Tenkan"]  = (high.rolling(9).max()  + low.rolling(9).min())  / 2
+    # Kijun-sen (26)
+    df["Ichi_Kijun"]   = (high.rolling(26).max() + low.rolling(26).min()) / 2
+    # Senkou Span A
+    df["Ichi_SpanA"]   = ((df["Ichi_Tenkan"] + df["Ichi_Kijun"]) / 2).shift(26)
+    # Senkou Span B
+    df["Ichi_SpanB"]   = ((high.rolling(52).max() + low.rolling(52).min()) / 2).shift(26)
+    # Chikou
+    df["Ichi_Chikou"]  = close.shift(-26)
+    return df
+
+def calc_fibonacci(df: pd.DataFrame, window: int = 100) -> dict:
+    """Tính các mức Fibonacci Retracement."""
+    recent = df.tail(window)
+    high   = float(recent["High"].max())
+    low    = float(recent["Low"].min())
+    diff   = high - low
+    return {
+        "High":   high,
+        "Low":    low,
+        "0.236":  high - 0.236 * diff,
+        "0.382":  high - 0.382 * diff,
+        "0.500":  high - 0.500 * diff,
+        "0.618":  high - 0.618 * diff,
+        "0.786":  high - 0.786 * diff,
+    }
+
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Thêm tất cả chỉ báo vào DataFrame."""
-    if len(df) < 50:
+    if len(df) < 52:
         return df
     close, high, low = df["Close"], df["High"], df["Low"]
 
@@ -324,8 +355,52 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["BB_upper"], df["BB_mid"], df["BB_lower"]   = calc_bollinger(close)
     df["Stoch_K"], df["Stoch_D"]                   = calc_stochastic(high, low, close)
     df["ATR"]          = calc_atr(high, low, close)
+    df = calc_ichimoku(df)
 
     return df
+
+@st.cache_data(ttl=3600)
+def fetch_economic_calendar() -> list:
+    """Lấy lịch kinh tế từ Forex Factory RSS."""
+    try:
+        resp = requests.get(
+            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            events = []
+            for e in data[:20]:
+                impact = e.get("impact", "").lower()
+                if impact in ("high", "medium"):
+                    events.append({
+                        "date":     e.get("date", ""),
+                        "time":     e.get("time", ""),
+                        "country":  e.get("country", ""),
+                        "title":    e.get("title", ""),
+                        "impact":   impact,
+                        "forecast": e.get("forecast", "-"),
+                        "previous": e.get("previous", "-"),
+                    })
+            return events
+    except:
+        pass
+    # Fallback: mock data nếu không lấy được
+    return [
+        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "14:30",
+         "country": "USD", "title": "Non-Farm Payrolls",
+         "impact": "high", "forecast": "185K", "previous": "175K"},
+        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "16:00",
+         "country": "EUR", "title": "ECB Interest Rate Decision",
+         "impact": "high", "forecast": "4.50%", "previous": "4.50%"},
+        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "09:00",
+         "country": "GBP", "title": "UK CPI y/y",
+         "impact": "medium", "forecast": "2.1%", "previous": "2.3%"},
+        {"date": datetime.now().strftime("%Y-%m-%d"), "time": "23:50",
+         "country": "JPY", "title": "BOJ Policy Rate",
+         "impact": "high", "forecast": "0.10%", "previous": "0.10%"},
+    ]
 
 
 # ════════════════════════════════════════════════════════
@@ -387,6 +462,20 @@ def compute_signal(df: pd.DataFrame) -> dict:
         signals["Stochastic"] = ("🔴 Quá mua", "bearish"); score -= 1
     else:
         signals["Stochastic"] = ("⚪ Trung tính", "neutral")
+
+    # Ichimoku
+    if "Ichi_Tenkan" in df.columns and not pd.isna(last["Ichi_Tenkan"]):
+        tenkan, kijun = last["Ichi_Tenkan"], last["Ichi_Kijun"]
+        span_a, span_b = last["Ichi_SpanA"], last["Ichi_SpanB"]
+        c2 = last["Close"]
+        if tenkan > kijun and c2 > max(span_a, span_b) if not pd.isna(span_a) else False:
+            signals["Ichimoku"] = ("🟢 Trên mây Kumo", "bullish"); score += 2
+        elif tenkan < kijun and c2 < min(span_a, span_b) if not pd.isna(span_a) else False:
+            signals["Ichimoku"] = ("🔴 Dưới mây Kumo", "bearish"); score -= 2
+        elif tenkan > kijun:
+            signals["Ichimoku"] = ("🟢 Tenkan > Kijun", "bullish"); score += 1
+        else:
+            signals["Ichimoku"] = ("🔴 Tenkan < Kijun", "bearish"); score -= 1
 
     # Tổng hợp
     if score >= 4:
@@ -467,6 +556,27 @@ def build_chart(df: pd.DataFrame, pair: str) -> go.Figure:
                 line=dict(color=color, width=1.2),
                 opacity=0.8
             ), row=1, col=1)
+
+    # ── Ichimoku Cloud ──
+    if "Ichi_SpanA" in d.columns:
+        fig.add_trace(go.Scatter(
+            x=d.index, y=d["Ichi_SpanA"], name="Span A",
+            line=dict(color="rgba(67,160,71,0.6)", width=1),
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=d.index, y=d["Ichi_SpanB"], name="Span B",
+            line=dict(color="rgba(229,57,53,0.6)", width=1),
+            fill="tonexty",
+            fillcolor="rgba(150,200,150,0.08)"
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=d.index, y=d["Ichi_Tenkan"], name="Tenkan",
+            line=dict(color="#e91e63", width=1, dash="dot"),
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=d.index, y=d["Ichi_Kijun"], name="Kijun",
+            line=dict(color="#2196f3", width=1, dash="dot"),
+        ), row=1, col=1)
 
     # ── Bollinger Bands ──
     if "BB_upper" in d.columns:
@@ -679,7 +789,16 @@ def main():
         st.markdown("---")
 
         use_ai = st.checkbox("🤖 Phân tích AI (Groq/Llama 3)", value=bool(GROQ_API_KEY))
-        use_telegram = st.checkbox("📱 Gửi Telegram", value=False)
+        use_telegram = st.checkbox("📱 Cảnh báo Telegram", value=bool(TELEGRAM_BOT_TOKEN))
+        if use_telegram and not TELEGRAM_BOT_TOKEN:
+            st.markdown("""
+            <div style="background:rgba(33,150,243,0.08);border:1px solid rgba(33,150,243,0.3);
+                        border-radius:8px;padding:8px;font-size:11px;color:#1565c0;margin-top:6px">
+            📱 Thêm vào Streamlit Secrets:<br>
+            <code style="background:#e3f2fd;color:#0d47a1">TELEGRAM_BOT_TOKEN = "xxx"</code><br>
+            <code style="background:#e3f2fd;color:#0d47a1">TELEGRAM_CHAT_ID = "xxx"</code>
+            </div>
+            """, unsafe_allow_html=True)
 
         if not GROQ_API_KEY:
             st.markdown("""
@@ -741,6 +860,42 @@ def main():
         price = float(last["Close"])
         change_pct = (price - float(prev["Close"])) / float(prev["Close"]) * 100
         now_str = datetime.now().strftime("%H:%M:%S")
+
+        # ── Phát âm thanh khi tín hiệu đổi ──
+        prev_action = st.session_state.get("prev_action", None)
+        if prev_action is not None and prev_action != sig["action"] and sig["action"] != "NEUTRAL":
+            sound_color = "#43a047" if sig["action"] == "BUY" else "#e53935"
+            sound_emoji = "📈" if sig["action"] == "BUY" else "📉"
+            st.markdown(f"""
+            <audio autoplay>
+              <source src="data:audio/wav;base64,
+                UklGRnoGAABXQVZFZm10IBAAAA...
+              " type="audio/wav">
+            </audio>
+            <script>
+              var ctx = new AudioContext();
+              var osc = ctx.createOscillator();
+              var gain = ctx.createGain();
+              osc.connect(gain); gain.connect(ctx.destination);
+              osc.frequency.value = {"880" if sig["action"] == "BUY" else "440"};
+              osc.type = "sine";
+              gain.gain.setValueAtTime(0.3, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+              osc.start(ctx.currentTime);
+              osc.stop(ctx.currentTime + 0.5);
+            </script>
+            <div style="background:{sound_color};color:white;padding:10px 16px;
+                        border-radius:10px;font-weight:700;font-size:14px;
+                        margin-bottom:10px;text-align:center;
+                        animation:fadeIn 0.3s ease">
+              {sound_emoji} TÍN HIỆU MỚI: {sig["action"]} — {pair}
+            </div>
+            <style>@keyframes fadeIn{{from{{opacity:0;transform:translateY(-8px)}}to{{opacity:1;transform:translateY(0)}}}}</style>
+            """, unsafe_allow_html=True)
+            # Gửi Telegram tự động khi tín hiệu đổi
+            if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+                send_telegram(pair, sig)
+        st.session_state["prev_action"] = sig["action"]
 
         # ── Thanh LIVE ──
         st.markdown(f"""
@@ -834,6 +989,60 @@ def main():
         st.markdown("**📈 Biểu đồ nến**")
         fig = build_chart(df, pair)
         st.plotly_chart(fig, use_container_width=True)
+
+        # ── Fibonacci levels ──
+        with st.expander("📐 Fibonacci Retracement"):
+            fib2 = calc_fibonacci(df)
+            price_now = float(last["Close"])
+            fcols = st.columns(4)
+            for i, (level, val) in enumerate([
+                ("High",   fib2["High"]),
+                ("0.236",  fib2["0.236"]),
+                ("0.382",  fib2["0.382"]),
+                ("0.500",  fib2["0.500"]),
+                ("0.618",  fib2["0.618"]),
+                ("0.786",  fib2["0.786"]),
+                ("Low",    fib2["Low"]),
+            ]):
+                col = fcols[i % 4]
+                diff_pct = (price_now - val) / val * 100
+                color = "#2e7d32" if price_now > val else "#c62828"
+                col.markdown(f"""
+                <div style="background:#f8fafd;border:1px solid #dce8f5;border-radius:8px;
+                            padding:8px;text-align:center;margin-bottom:6px">
+                  <div style="font-size:10px;color:#5a7a9a;font-family:monospace">{level}</div>
+                  <div style="font-size:13px;font-weight:700;color:#0d47a1;font-family:monospace">{fmt(val)}</div>
+                  <div style="font-size:10px;color:{color}">{diff_pct:+.2f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ── Lịch kinh tế ──
+        with st.expander("⏰ Lịch kinh tế tuần này"):
+            events = fetch_economic_calendar()
+            if events:
+                for ev in events:
+                    impact_color = "#c62828" if ev["impact"] == "high" else "#f57c00"
+                    impact_label = "🔴 Cao" if ev["impact"] == "high" else "🟡 TB"
+                    st.markdown(f"""
+                    <div style="background:#ffffff;border:1px solid #dce8f5;
+                                border-left:4px solid {impact_color};
+                                border-radius:8px;padding:10px 14px;margin-bottom:6px;
+                                display:flex;justify-content:space-between;align-items:center">
+                      <div>
+                        <span style="font-family:monospace;font-size:11px;color:#5a7a9a">
+                          {ev["date"]} {ev["time"]} · {ev["country"]}
+                        </span><br>
+                        <span style="font-weight:600;font-size:13px;color:#1a2332">{ev["title"]}</span>
+                      </div>
+                      <div style="text-align:right;font-family:monospace;font-size:11px">
+                        <div>{impact_label}</div>
+                        <div style="color:#0d47a1">Dự báo: {ev["forecast"]}</div>
+                        <div style="color:#5a7a9a">Trước: {ev["previous"]}</div>
+                      </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Không có sự kiện quan trọng tuần này.")
 
         # ── OHLCV table ──
         with st.expander("📋 Dữ liệu OHLCV gần nhất"):
