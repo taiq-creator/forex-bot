@@ -332,7 +332,6 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
         resp = requests.get(url, params=params, timeout=10)
         data = resp.json()
         if data.get("status") == "error" or "values" not in data:
-            st.error(f"❌ Twelve Data: {data.get('message', data)}")
             return pd.DataFrame()
         rows = data["values"]
         df = pd.DataFrame(rows)
@@ -354,21 +353,14 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
 
 def fetch_ohlcv(pair_name: str, tf_label: str) -> tuple[pd.DataFrame, str]:
     """
-    Ưu tiên Twelve Data, fallback Yahoo Finance.
+    Lấy OHLCV từ Yahoo Finance + giá realtime từ ExchangeRate API.
     Trả về (DataFrame, source_name)
     """
-    td_sym, yf_ticker, _ = PAIRS[pair_name]
-    td_interval, yf_interval, yf_period, outputsize = TIMEFRAMES[tf_label]
+    _, yf_ticker, _ = PAIRS[pair_name]
+    _, yf_interval, yf_period, _ = TIMEFRAMES[tf_label]
 
-    # Thử Twelve Data
-    df = fetch_ohlcv_twelvedata(td_sym, td_interval, outputsize)
-    if not df.empty:
-        return df, "Twelve Data ⚡"
-
-    # Fallback Yahoo Finance
     df = fetch_ohlcv_yahoo(yf_ticker, yf_interval, yf_period)
     if not df.empty:
-        # Resample 4H nếu cần (Yahoo không có 4H native)
         if tf_label == "H4 (4 giờ)":
             df = df.resample("4h").agg({
                 "Open":"first","High":"max",
