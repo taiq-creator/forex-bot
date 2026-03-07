@@ -36,10 +36,17 @@ try:
 except ImportError:
     pass
 
-GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "")
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "")
-TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID", "")
+def _get_secret(key: str) -> str:
+    """Đọc secret từ Streamlit Cloud hoặc .env local."""
+    try:
+        return st.secrets[key]
+    except Exception:
+        return os.getenv(key, "")
+
+GROQ_API_KEY        = _get_secret("GROQ_API_KEY")
+TWELVE_DATA_API_KEY = _get_secret("TWELVE_DATA_API_KEY")
+TELEGRAM_BOT_TOKEN  = _get_secret("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID    = _get_secret("TELEGRAM_CHAT_ID")
 
 # ── Cấu hình trang ───────────────────────────────────────
 st.set_page_config(
@@ -248,9 +255,14 @@ TIMEFRAMES = {
 @st.cache_data(ttl=3)    # cache 3 giây — real-time
 def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd.DataFrame:
     """Tải dữ liệu từ Twelve Data API (~1 giây độ trễ)."""
-    # Đọc key trực tiếp mỗi lần — tránh cache key rỗng lúc khởi động
-    api_key = os.getenv("TWELVE_DATA_API_KEY", "")
+    # Đọc key từ st.secrets (Streamlit Cloud) hoặc os.getenv (local)
+    api_key = ""
+    try:
+        api_key = st.secrets["TWELVE_DATA_API_KEY"]
+    except Exception:
+        api_key = os.getenv("TWELVE_DATA_API_KEY", "")
     if not api_key:
+        st.error("❌ Không tìm thấy TWELVE_DATA_API_KEY trong Secrets!")
         return pd.DataFrame()
     try:
         url = "https://api.twelvedata.com/time_series"
@@ -265,6 +277,7 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
         resp = requests.get(url, params=params, timeout=10)
         data = resp.json()
         if data.get("status") == "error" or "values" not in data:
+            st.error(f"❌ Twelve Data: {data.get('message', data)}")
             return pd.DataFrame()
         rows = data["values"]
         df = pd.DataFrame(rows)
