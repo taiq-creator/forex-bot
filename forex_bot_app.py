@@ -201,6 +201,15 @@ st.markdown("""
   /* ══════════════════════════════════════
      MOBILE RESPONSIVE
   ══════════════════════════════════════ */
+  /* ── Quick selector bar ── */
+  div[data-testid="stSelectbox"] > div > div {
+    border-radius: 10px !important;
+    border: 1.5px solid #dce8f5 !important;
+    background: #ffffff !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+  }
+
   @media (max-width: 768px) {
     /* Thu nhỏ header */
     .forex-header h1 { font-size: 18px !important; }
@@ -869,13 +878,38 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Sidebar ──
+    # ── Selector nhanh ngay dưới header (luôn hiển thị, kể cả mobile) ──
+    mc1, mc2 = st.columns([3, 2])
+    with mc1:
+        pair = st.selectbox("📌 Cặp tiền", list(PAIRS.keys()), index=0,
+                            label_visibility="collapsed",
+                            placeholder="Chọn cặp tiền...")
+    with mc2:
+        tf_label = st.selectbox("⏱ Khung TG", list(TIMEFRAMES.keys()), index=2,
+                                label_visibility="collapsed")
+    tf_short = tf_label.split(" ")[0]
+
+    # ── Sidebar ── (ẩn trên mobile nhưng vẫn có trên desktop)
     with st.sidebar:
         st.markdown("### ⚙️ Cài đặt")
+        st.markdown("""
+        <div style="background:rgba(144,202,249,0.1);border:1px solid rgba(144,202,249,0.2);
+                    border-radius:8px;padding:8px 10px;font-size:11px;color:#90caf9;margin-bottom:8px">
+        💡 Chọn cặp tiền & khung TG ngay trên màn hình chính
+        </div>
+        """, unsafe_allow_html=True)
 
-        pair = st.selectbox("Cặp tiền tệ", list(PAIRS.keys()), index=0)
-        tf_label = st.selectbox("Khung thời gian", list(TIMEFRAMES.keys()), index=2)
-        tf_short = tf_label.split(" ")[0]
+        # Đồng bộ với selector trên main (chỉ hiển thị lại để desktop tiện)
+        pair_sb = st.selectbox("Cặp tiền tệ", list(PAIRS.keys()),
+                               index=list(PAIRS.keys()).index(pair))
+        tf_sb   = st.selectbox("Khung thời gian", list(TIMEFRAMES.keys()),
+                               index=list(TIMEFRAMES.keys()).index(tf_label))
+        # Nếu sidebar thay đổi thì dùng sidebar
+        if pair_sb != pair:
+            pair = pair_sb
+        if tf_sb != tf_label:
+            tf_label = tf_sb
+            tf_short = tf_label.split(" ")[0]
 
         st.markdown("---")
 
