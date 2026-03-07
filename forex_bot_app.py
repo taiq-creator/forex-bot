@@ -252,7 +252,47 @@ TIMEFRAMES = {
     "W1 (Tuần)":     ("1week","1wk",  "730d", 100),
 }
 
-@st.cache_data(ttl=3)    # cache 3 giây — real-time
+def fetch_realtime_price(pair_name: str) -> float | None:
+    """
+    Lấy giá tức thì từ ExchangeRate-API — miễn phí, không cần key, cập nhật mỗi 3s.
+    Hỗ trợ Forex + Kim loại. Crypto dùng Binance.
+    """
+    try:
+        _, _, asset_type = PAIRS[pair_name]
+        td_sym = PAIRS[pair_name][0]  # "EUR/USD"
+
+        if asset_type == "crypto":
+            # Binance API — realtime hoàn toàn
+            symbol_map = {
+                "BTC/USD": "BTCUSDT",
+                "ETH/USD": "ETHUSDT",
+            }
+            binance_sym = symbol_map.get(td_sym)
+            if binance_sym:
+                resp = requests.get(
+                    f"https://api.binance.com/api/v3/ticker/price?symbol={binance_sym}",
+                    timeout=5
+                )
+                return float(resp.json()["price"])
+
+        elif asset_type in ("forex", "commodity"):
+            # ExchangeRate-API — free, no key needed
+            base, quote = td_sym.split("/")
+            resp = requests.get(
+                f"https://open.er-api.com/v6/latest/{base}",
+                timeout=5
+            )
+            data = resp.json()
+            if data.get("result") == "success":
+                rate = data["rates"].get(quote)
+                if rate:
+                    return float(rate)
+    except Exception:
+        pass
+    return None
+
+
+@st.cache_data(ttl=60)   # cache 60 giây — tiết kiệm credits
 def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd.DataFrame:
     """Tải dữ liệu từ Twelve Data API (~1 giây độ trễ)."""
     # Đọc key từ st.secrets (Streamlit Cloud) hoặc os.getenv (local)
@@ -803,7 +843,8 @@ def main():
         # ── Metrics ──
         st.markdown(f"### 📍 {pair} · {tf_short}")
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Giá hiện tại", fmt(price), f"{change_pct:+.2f}%")
+        price_label = "⚡ Giá realtime" if realtime_price else "Giá (60s)"
+        c1.metric(price_label, fmt(price), f"{change_pct:+.2f}%")
         c2.metric("High (kỳ)", fmt(float(last["High"])))
         c3.metric("Low (kỳ)", fmt(float(last["Low"])))
         c4.metric("ATR", fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "N/A")
@@ -900,7 +941,9 @@ def main():
     # Gọi live_dashboard
     live_dashboard()
 
-    # Auto-refresh mỗi 3 giây
+    # Auto-refresh mỗi 3s
+    # Giá tức thì: ExchangeRate API (không cache)
+    # OHLCV + chỉ báo: Twelve Data (cache 60s — tự hết hạn)
     time.sleep(3)
     st.rerun()
 
