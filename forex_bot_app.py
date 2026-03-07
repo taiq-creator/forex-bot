@@ -851,7 +851,10 @@ def main():
         sig = compute_signal(df)
         last = df.iloc[-1]
         prev = df.iloc[-2]
-        price = float(last["Close"])
+
+        # Giá realtime từ ExchangeRate API
+        realtime_price = fetch_realtime_price(pair)
+        price = realtime_price if realtime_price else float(last["Close"])
         change_pct = (price - float(prev["Close"])) / float(prev["Close"]) * 100
         now_str = datetime.now().strftime("%H:%M:%S")
 
