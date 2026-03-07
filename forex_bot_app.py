@@ -54,7 +54,7 @@ st.set_page_config(
     page_title="ForexAI Bot",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # ── CSS giao diện sáng ───────────────────────────────────
@@ -197,6 +197,52 @@ st.markdown("""
 
   /* ── Dataframe ── */
   .stDataFrame { border: 1px solid #dce8f5; border-radius: 10px; overflow: hidden; }
+
+  /* ══════════════════════════════════════
+     MOBILE RESPONSIVE
+  ══════════════════════════════════════ */
+  @media (max-width: 768px) {
+    /* Thu nhỏ header */
+    .forex-header h1 { font-size: 18px !important; }
+    .forex-header .live-badge { font-size: 9px !important; padding: 3px 8px !important; }
+
+    /* Metric cards nhỏ hơn */
+    div[data-testid="metric-container"] {
+      padding: 8px !important;
+      border-radius: 8px !important;
+    }
+    div[data-testid="metric-container"] label { font-size: 10px !important; }
+    div[data-testid="metric-container"] div[data-testid="metric-value"] {
+      font-size: 13px !important;
+    }
+
+    /* Signal cards gọn hơn */
+    .signal-buy, .signal-sell, .signal-neutral {
+      padding: 12px !important;
+      border-radius: 10px !important;
+    }
+    .signal-buy div, .signal-sell div, .signal-neutral div {
+      font-size: 20px !important;
+    }
+
+    /* Indicator cards gọn */
+    .ind-card { padding: 7px 10px !important; margin-bottom: 5px !important; }
+    .ind-card span { font-size: 11px !important; }
+
+    /* Ẩn bớt padding */
+    .block-container { padding: 0.5rem 0.5rem 0 !important; }
+
+    /* Sidebar collapse mặc định trên mobile */
+  }
+
+  @media (max-width: 480px) {
+    /* Rất nhỏ — smartphone */
+    div[data-testid="metric-container"] label { font-size: 9px !important; }
+    div[data-testid="metric-container"] div[data-testid="metric-value"] {
+      font-size: 12px !important;
+    }
+    .ind-card span { font-size: 10px !important; }
+  }
 
   /* ── Code ── */
   code { background: #e8f0fe !important; color: #1565c0 !important; border-radius: 4px; padding: 2px 6px; }
@@ -804,20 +850,21 @@ def send_telegram(pair: str, sig: dict) -> bool:
 def main():
     # ── Header ──
     st.markdown("""
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;
+    <div class="forex-header" style="display:flex;align-items:center;gap:10px;margin-bottom:6px;
                 background:linear-gradient(135deg,#1565c0,#0d47a1);
-                padding:18px 24px;border-radius:14px;
+                padding:14px 18px;border-radius:12px;
                 box-shadow:0 4px 20px rgba(13,71,161,0.2)">
-      <div style="width:12px;height:12px;background:#69f0ae;border-radius:50%;
-                  box-shadow:0 0 10px #69f0ae;flex-shrink:0"></div>
-      <h1 style="margin:0;font-size:26px;letter-spacing:-0.5px;color:#ffffff !important">
+      <div style="width:10px;height:10px;background:#69f0ae;border-radius:50%;
+                  box-shadow:0 0 8px #69f0ae;flex-shrink:0"></div>
+      <h1 style="margin:0;font-size:22px;letter-spacing:-0.5px;color:#ffffff !important;white-space:nowrap">
         FOREX<span style="color:#90caf9;font-weight:400">AI</span> Bot
       </h1>
-      <div style="background:rgba(105,240,174,0.15);border:1px solid rgba(105,240,174,0.4);
-                  color:#69f0ae;padding:4px 12px;border-radius:20px;font-size:10px;
-                  letter-spacing:1.5px;font-family:monospace;font-weight:700">● LIVE</div>
-      <div style="margin-left:auto;font-family:monospace;font-size:11px;color:rgba(255,255,255,0.6)">
-        Twelve Data · Groq AI
+      <div class="live-badge" style="background:rgba(105,240,174,0.15);border:1px solid rgba(105,240,174,0.4);
+                  color:#69f0ae;padding:3px 10px;border-radius:20px;font-size:10px;
+                  letter-spacing:1.5px;font-family:monospace;font-weight:700;white-space:nowrap">● LIVE</div>
+      <div style="margin-left:auto;font-family:monospace;font-size:11px;color:rgba(255,255,255,0.6);
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        Yahoo · Groq AI
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -925,13 +972,17 @@ def main():
 
         # ── Metrics ──
         st.markdown(f"### 📍 {pair} · {tf_short}")
-        c1, c2, c3, c4, c5 = st.columns(5)
+        # Hàng 1: giá chính
+        c1, c2, c3 = st.columns(3)
         price_label = "⚡ Giá realtime" if realtime_price else "Giá (60s)"
         c1.metric(price_label, fmt(price), f"{change_pct:+.2f}%")
-        c2.metric("High (kỳ)", fmt(float(last["High"])))
-        c3.metric("Low (kỳ)", fmt(float(last["Low"])))
+        c2.metric("High", fmt(float(last["High"])))
+        c3.metric("Low",  fmt(float(last["Low"])))
+        # Hàng 2: chi tiết
+        c4, c5, c6 = st.columns(3)
         c4.metric("ATR", fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "N/A")
         c5.metric("Cập nhật", now_str)
+        c6.metric("Nguồn", data_source.replace(" ⚡",""))
 
         st.markdown("---")
 
@@ -965,20 +1016,18 @@ def main():
             rr = abs(s["tp"]-s["entry"]) / max(abs(s["sl"]-s["entry"]), 1e-10)
             st.caption(f"R/R: 1:{rr:.1f}")
 
-        col_short, col_long, col_ind = st.columns([1, 1, 2])
-
+        # Tín hiệu 2 cột — tự stack dọc trên mobile
+        col_short, col_long = st.columns(2)
         with col_short:
             render_signal_card(sig_short, "NGẮN HẠN (Scalping)", "⚡")
-
         with col_long:
             render_signal_card(sig_long, "DÀI HẠN (Swing)", "📊")
 
-        col_sig = col_short  # để phần telegram/sound dùng
-        with col_short:
-            pass
+        col_ind_full = st.container()
 
-        with col_ind:
+        with col_ind_full:
             st.markdown("**🔧 Chỉ báo kỹ thuật chi tiết**")
+            col_ind_a, col_ind_b = st.columns(2)
             ind_data = {
                 "RSI (14)":     (f"{sig['rsi']:.1f}",   sig["signals"].get("RSI",("",""))[0]),
                 "MACD":         (f"{sig['macd']:.5f}",  sig["signals"].get("MACD",("",""))[0]),
@@ -990,17 +1039,23 @@ def main():
                 "Stochastic %K":(f"{sig['stoch_k']:.1f}", sig["signals"].get("Stochastic",("",""))[0]),
                 "ATR (14)":     (fmt(sig["atr"]), "📊 Biến động"),
             }
-            for name, (val, signal_str) in ind_data.items():
-                card_cls = ("ind-card bullish" if "🟢" in signal_str
-                            else "ind-card bearish" if "🔴" in signal_str
-                            else "ind-card neutral")
-                st.markdown(f"""
-                <div class="{card_cls}">
-                  <span style="color:#5a7a9a;font-family:monospace;font-size:12px;font-weight:500">{name}</span>
-                  <span style="color:#0d47a1;font-family:monospace;font-size:13px;font-weight:700">{val}</span>
-                  <span style="font-size:12px">{signal_str}</span>
-                </div>
-                """, unsafe_allow_html=True)
+            ind_items = list(ind_data.items())
+            half = (len(ind_items) + 1) // 2
+            for col_x, items_x in [(col_ind_a, ind_items[:half]), (col_ind_b, ind_items[half:])]:
+                with col_x:
+                    for name, (val, signal_str) in items_x:
+                        card_cls = ("ind-card bullish" if "🟢" in signal_str
+                                    else "ind-card bearish" if "🔴" in signal_str
+                                    else "ind-card neutral")
+                        st.markdown(f"""
+                        <div class="{card_cls}">
+                          <div style="font-size:11px;color:#5a7a9a;font-family:monospace;font-weight:500">{name}</div>
+                          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+                            <span style="color:#0d47a1;font-family:monospace;font-size:12px;font-weight:700">{val}</span>
+                            <span style="font-size:11px">{signal_str}</span>
+                          </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
         st.markdown("---")
 
