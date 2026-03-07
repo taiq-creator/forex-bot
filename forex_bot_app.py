@@ -439,99 +439,156 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 #  TÍNH TÍN HIỆU
 # ════════════════════════════════════════════════════════
 
-def compute_signal(df: pd.DataFrame) -> dict:
-    """Tổng hợp tín hiệu từ các chỉ báo."""
+def _make_signal_result(action, score, max_score, atr_mult_tp, atr_mult_sl,
+                        last, signals, rsi, sk):
+    """Helper tạo dict kết quả tín hiệu."""
+    confidence = min(95, int(abs(score) / max_score * 100) + 40)
+    atr  = float(last["ATR"])
+    entry = float(last["Close"])
+    if action == "BUY":
+        tp = entry + atr * atr_mult_tp
+        sl = entry - atr * atr_mult_sl
+    elif action == "SELL":
+        tp = entry - atr * atr_mult_tp
+        sl = entry + atr * atr_mult_sl
+    else:
+        tp = entry + atr * 1.5
+        sl = entry - atr * 1.0
+    return {
+        "action": action, "confidence": confidence, "score": score,
+        "signals": signals, "entry": entry, "tp": tp, "sl": sl,
+        "rsi": float(rsi), "macd": float(last["MACD"]),
+        "atr": atr, "stoch_k": float(sk),
+    }
+
+
+def compute_signal_short(df: pd.DataFrame) -> dict:
+    """
+    Tín hiệu NGẮN HẠN — scalping/intraday.
+    Dựa trên: RSI, MACD crossover, Stochastic, Bollinger Bands.
+    TP = 1.5×ATR, SL = 0.75×ATR → Risk/Reward 1:2
+    """
     last = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else last
-
     signals = {}
-    score = 0   # dương → mua, âm → bán
+    score = 0
 
-    # RSI
+    # RSI ngắn hạn — nhạy hơn
     rsi = last["RSI"]
-    if rsi < 30:
-        signals["RSI"] = ("🟢 Quá bán", "bullish");  score += 2
-    elif rsi > 70:
-        signals["RSI"] = ("🔴 Quá mua", "bearish");  score -= 2
+    if rsi < 35:
+        signals["RSI"] = ("🟢 Quá bán", "bullish"); score += 2
+    elif rsi > 65:
+        signals["RSI"] = ("🔴 Quá mua", "bearish"); score -= 2
+    elif rsi < 50:
+        signals["RSI"] = ("🟡 Hơi yếu", "neutral"); score += 0.5
     else:
-        signals["RSI"] = ("⚪ Trung tính", "neutral")
+        signals["RSI"] = ("🟡 Hơi mạnh", "neutral"); score -= 0.5
 
-    # MACD
+    # MACD crossover — tín hiệu mạnh nhất ngắn hạn
     if last["MACD"] > last["MACD_signal"] and prev["MACD"] <= prev["MACD_signal"]:
-        signals["MACD"] = ("🟢 Cắt lên (BUY)", "bullish"); score += 3
+        signals["MACD"] = ("🟢 Cắt lên ↑", "bullish"); score += 3
     elif last["MACD"] < last["MACD_signal"] and prev["MACD"] >= prev["MACD_signal"]:
-        signals["MACD"] = ("🔴 Cắt xuống (SELL)", "bearish"); score -= 3
+        signals["MACD"] = ("🔴 Cắt xuống ↓", "bearish"); score -= 3
     elif last["MACD"] > last["MACD_signal"]:
-        signals["MACD"] = ("🟢 MACD trên Signal", "bullish"); score += 1
+        signals["MACD"] = ("🟢 MACD > Signal", "bullish"); score += 1
     else:
-        signals["MACD"] = ("🔴 MACD dưới Signal", "bearish"); score -= 1
+        signals["MACD"] = ("🔴 MACD < Signal", "bearish"); score -= 1
 
-    # EMA
-    c = last["Close"]
-    if last["EMA_20"] > last["EMA_50"]:
-        signals["EMA 20/50"] = ("🟢 EMA20 > EMA50", "bullish"); score += 1
-    else:
-        signals["EMA 20/50"] = ("🔴 EMA20 < EMA50", "bearish"); score -= 1
-
-    if c > last["EMA_200"]:
-        signals["EMA 200"] = ("🟢 Giá trên EMA200", "bullish"); score += 1
-    else:
-        signals["EMA 200"] = ("🔴 Giá dưới EMA200", "bearish"); score -= 1
-
-    # Bollinger
-    if c < last["BB_lower"]:
-        signals["Bollinger"] = ("🟢 Chạm đáy BB", "bullish"); score += 2
-    elif c > last["BB_upper"]:
-        signals["Bollinger"] = ("🔴 Chạm đỉnh BB", "bearish"); score -= 2
-    else:
-        signals["Bollinger"] = ("⚪ Trong BB", "neutral")
-
-    # Stochastic
+    # Stochastic — momentum ngắn hạn
     sk = last["Stoch_K"]
-    if sk < 20:
+    sd = last["Stoch_D"]
+    if sk < 20 and sk > sd:
+        signals["Stochastic"] = ("🟢 Đảo chiều tăng", "bullish"); score += 2
+    elif sk > 80 and sk < sd:
+        signals["Stochastic"] = ("🔴 Đảo chiều giảm", "bearish"); score -= 2
+    elif sk < 20:
         signals["Stochastic"] = ("🟢 Quá bán", "bullish"); score += 1
     elif sk > 80:
         signals["Stochastic"] = ("🔴 Quá mua", "bearish"); score -= 1
     else:
         signals["Stochastic"] = ("⚪ Trung tính", "neutral")
 
-    # Tổng hợp
-    if score >= 4:
-        action = "BUY"
-    elif score <= -4:
-        action = "SELL"
+    # Bollinger Bands — breakout/rebound
+    c = float(last["Close"])
+    if c < float(last["BB_lower"]):
+        signals["Bollinger"] = ("🟢 Chạm đáy BB", "bullish"); score += 2
+    elif c > float(last["BB_upper"]):
+        signals["Bollinger"] = ("🔴 Chạm đỉnh BB", "bearish"); score -= 2
+    elif c > float(last["BB_mid"]):
+        signals["Bollinger"] = ("🟢 Trên MA20", "bullish"); score += 1
     else:
-        action = "NEUTRAL"
+        signals["Bollinger"] = ("🔴 Dưới MA20", "bearish"); score -= 1
 
-    max_score = 10
-    confidence = min(95, int(abs(score) / max_score * 100) + 40)
+    score = int(score)
+    action = "BUY" if score >= 4 else "SELL" if score <= -4 else "NEUTRAL"
+    return _make_signal_result(action, score, 8, 1.5, 0.75, last, signals, rsi, sk)
 
-    # TP / SL
-    atr = last["ATR"]
-    entry = float(last["Close"])
-    if action == "BUY":
-        tp = entry + atr * 2.0
-        sl = entry - atr * 1.0
-    elif action == "SELL":
-        tp = entry - atr * 2.0
-        sl = entry + atr * 1.0
+
+def compute_signal_long(df: pd.DataFrame) -> dict:
+    """
+    Tín hiệu DÀI HẠN — swing/position trading.
+    Dựa trên: EMA 20/50/200, xu hướng tổng thể, MACD histogram.
+    TP = 3×ATR, SL = 1.5×ATR → Risk/Reward 1:2
+    """
+    last = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) > 1 else last
+    signals = {}
+    score = 0
+
+    c = float(last["Close"])
+
+    # EMA 20/50 — xu hướng trung hạn
+    e20, e50 = float(last["EMA_20"]), float(last["EMA_50"])
+    if e20 > e50 and prev["EMA_20"] <= prev["EMA_50"]:
+        signals["EMA 20/50"] = ("🟢 Golden Cross ✨", "bullish"); score += 3
+    elif e20 < e50 and prev["EMA_20"] >= prev["EMA_50"]:
+        signals["EMA 20/50"] = ("🔴 Death Cross ☠️", "bearish"); score -= 3
+    elif e20 > e50:
+        signals["EMA 20/50"] = ("🟢 Xu hướng tăng", "bullish"); score += 1
     else:
-        tp = entry + atr * 1.5
-        sl = entry - atr * 1.0
+        signals["EMA 20/50"] = ("🔴 Xu hướng giảm", "bearish"); score -= 1
 
-    return {
-        "action": action,
-        "confidence": confidence,
-        "score": score,
-        "signals": signals,
-        "entry": entry,
-        "tp": tp,
-        "sl": sl,
-        "rsi": float(rsi),
-        "macd": float(last["MACD"]),
-        "atr": float(atr),
-        "stoch_k": float(sk),
-    }
+    # EMA 200 — xu hướng dài hạn (quan trọng nhất)
+    e200 = float(last["EMA_200"])
+    if c > e200 and e20 > e200:
+        signals["EMA 200"] = ("🟢 Trên EMA200 mạnh", "bullish"); score += 3
+    elif c > e200:
+        signals["EMA 200"] = ("🟢 Giá trên EMA200", "bullish"); score += 2
+    elif c < e200 and e20 < e200:
+        signals["EMA 200"] = ("🔴 Dưới EMA200 yếu", "bearish"); score -= 3
+    else:
+        signals["EMA 200"] = ("🔴 Giá dưới EMA200", "bearish"); score -= 2
+
+    # MACD histogram — momentum dài hạn
+    hist = float(last["MACD_hist"])
+    prev_hist = float(prev["MACD_hist"])
+    if hist > 0 and hist > prev_hist:
+        signals["MACD Hist"] = ("🟢 Tăng tốc tăng", "bullish"); score += 2
+    elif hist > 0:
+        signals["MACD Hist"] = ("🟢 Dương", "bullish"); score += 1
+    elif hist < 0 and hist < prev_hist:
+        signals["MACD Hist"] = ("🔴 Tăng tốc giảm", "bearish"); score -= 2
+    else:
+        signals["MACD Hist"] = ("🔴 Âm", "bearish"); score -= 1
+
+    # Giá so với EMA 20 — vị trí trong xu hướng
+    rsi = float(last["RSI"])
+    if c > e20 and rsi > 50:
+        signals["Vị trí giá"] = ("🟢 Trên EMA20, RSI > 50", "bullish"); score += 1
+    elif c < e20 and rsi < 50:
+        signals["Vị trí giá"] = ("🔴 Dưới EMA20, RSI < 50", "bearish"); score -= 1
+    else:
+        signals["Vị trí giá"] = ("⚪ Trung tính", "neutral")
+
+    sk = float(last["Stoch_K"])
+    score = int(score)
+    action = "BUY" if score >= 5 else "SELL" if score <= -5 else "NEUTRAL"
+    return _make_signal_result(action, score, 9, 3.0, 1.5, last, signals, rsi, sk)
+
+
+def compute_signal(df: pd.DataFrame) -> dict:
+    """Tín hiệu tổng hợp (backward compat)."""
+    return compute_signal_short(df)
 
 
 # ════════════════════════════════════════════════════════
@@ -840,7 +897,9 @@ def main():
             st.warning("⚠️ Không đủ dữ liệu.")
             return
 
-        sig = compute_signal(df)
+        sig_short = compute_signal_short(df)
+        sig_long  = compute_signal_long(df)
+        sig = sig_short  # dùng cho âm thanh/telegram
         last = df.iloc[-1]
         prev = df.iloc[-2]
 
@@ -877,40 +936,46 @@ def main():
         st.markdown("---")
 
         # ── Tín hiệu + Chỉ báo ──
-        col_sig, col_ind = st.columns([1, 2])
-        with col_sig:
-            action = sig["action"]
-            conf   = sig["confidence"]
-            css    = "signal-buy" if action=="BUY" else "signal-sell" if action=="SELL" else "signal-neutral"
-            emoji  = "📈" if action=="BUY" else "📉" if action=="SELL" else "⏸"
-            color  = "#2e7d32" if action=="BUY" else "#c62828" if action=="SELL" else "#e65100"
-            label  = "TÍN HIỆU MUA" if action=="BUY" else "TÍN HIỆU BÁN" if action=="SELL" else "TRUNG TÍNH"
+        # ── Hàm helper render 1 tín hiệu ──
+        def render_signal_card(s, title, icon):
+            act  = s["action"]
+            conf = s["confidence"]
+            css  = "signal-buy" if act=="BUY" else "signal-sell" if act=="SELL" else "signal-neutral"
+            em   = "📈" if act=="BUY" else "📉" if act=="SELL" else "⏸"
+            clr  = "#2e7d32" if act=="BUY" else "#c62828" if act=="SELL" else "#e65100"
+            lbl  = "TÍN HIỆU MUA" if act=="BUY" else "TÍN HIỆU BÁN" if act=="SELL" else "TRUNG TÍNH"
             st.markdown(f"""
-            <div class="{css}">
-              <div style="font-size:11px;font-family:monospace;color:#4a7a99;
-                          letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">
-                Tín hiệu giao dịch
+            <div class="{css}" style="margin-bottom:10px">
+              <div style="font-size:10px;font-family:monospace;color:#4a7a99;
+                          letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">
+                {icon} {title}
               </div>
-              <div style="font-size:36px;font-weight:800;color:{color};letter-spacing:-1px">
-                {emoji} {label}
+              <div style="font-size:28px;font-weight:800;color:{clr};letter-spacing:-0.5px">
+                {em} {lbl}
               </div>
-              <div style="font-size:22px;font-weight:700;color:{color};margin-top:4px">
-                {conf}% Tin cậy
-              </div>
-              <div style="font-family:monospace;font-size:11px;color:#4a7a99;margin-top:8px">
-                Score: {sig['score']:+d} / 10 | {pair} {tf_short}
+              <div style="font-size:18px;font-weight:700;color:{clr};margin-top:2px">
+                {conf}% Tin cậy · Score {s['score']:+d}
               </div>
             </div>
             """, unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("**📊 Mức giá giao dịch**")
             g1, g2, g3 = st.columns(3)
-            g1.metric("📍 Entry",       fmt(sig["entry"]))
-            g2.metric("🎯 Take Profit", fmt(sig["tp"]))
-            g3.metric("🛑 Stop Loss",   fmt(sig["sl"]))
-            rr = abs(sig["tp"]-sig["entry"]) / max(abs(sig["sl"]-sig["entry"]), 1e-10)
-            st.caption(f"Risk/Reward ratio: 1:{rr:.1f}")
+            g1.metric("📍 Entry",       fmt(s["entry"]))
+            g2.metric("🎯 TP",          fmt(s["tp"]))
+            g3.metric("🛑 SL",          fmt(s["sl"]))
+            rr = abs(s["tp"]-s["entry"]) / max(abs(s["sl"]-s["entry"]), 1e-10)
+            st.caption(f"R/R: 1:{rr:.1f}")
+
+        col_short, col_long, col_ind = st.columns([1, 1, 2])
+
+        with col_short:
+            render_signal_card(sig_short, "NGẮN HẠN (Scalping)", "⚡")
+
+        with col_long:
+            render_signal_card(sig_long, "DÀI HẠN (Swing)", "📊")
+
+        col_sig = col_short  # để phần telegram/sound dùng
+        with col_short:
+            pass
 
         with col_ind:
             st.markdown("**🔧 Chỉ báo kỹ thuật chi tiết**")
