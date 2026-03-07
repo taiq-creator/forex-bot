@@ -276,7 +276,7 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
         })
         for col in ["Open","High","Low","Close"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df["Volume"] = pd.to_numeric(df.get("Volume", 0), errors="coerce").fillna(0)
+        df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce").fillna(0) if "Volume" in df.columns else 0
         return df[["Open","High","Low","Close","Volume"]].dropna()
     except Exception as e:
         st.error(f"❌ Twelve Data lỗi: {e}")
@@ -726,7 +726,7 @@ def main():
             """, unsafe_allow_html=True)
 
         st.markdown("---")
-        analyze_btn = st.button("⚡ Phân tích ngay", width="stretch")
+        analyze_btn = st.button("⚡ Phân tích ngay", use_container_width=True)
 
         st.markdown("---")
         st.markdown("""
@@ -751,10 +751,8 @@ def main():
         fmt = lambda v: f"{v:.5f}"
 
     # ══════════════════════════════════════════════
-    # FRAGMENT: cập nhật mượt mà, không nháy màn hình
-    # run_every=3 → tự gọi lại mỗi 3 giây
+    # LIVE DASHBOARD: cập nhật mỗi 3 giây
     # ══════════════════════════════════════════════
-    @st.fragment(run_every=3)
     def live_dashboard():
         # Tải dữ liệu mới
         df_raw, data_source = fetch_ohlcv(pair, tf_label)
@@ -866,14 +864,14 @@ def main():
         # ── Biểu đồ ──
         st.markdown("**📈 Biểu đồ nến**")
         fig = build_chart(df, pair)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
         # ── OHLCV table ──
         with st.expander("📋 Dữ liệu OHLCV gần nhất"):
             st.dataframe(
                 df.tail(20)[["Open","High","Low","Close","Volume",
                              "RSI","MACD","EMA_20","EMA_50"]].round(5),
-                width="stretch",
+                use_container_width=True,
             )
 
         # ── Footer ──
@@ -886,8 +884,12 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    # Gọi fragment — tự cập nhật mỗi 3 giây, không nháy màn hình
+    # Gọi live_dashboard
     live_dashboard()
+
+    # Auto-refresh mỗi 3 giây
+    time.sleep(3)
+    st.rerun()
 
     # ── AI Phân tích (ngoài fragment vì chỉ chạy khi bấm nút) ──
     if use_ai and analyze_btn:
