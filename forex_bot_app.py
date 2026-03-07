@@ -20,6 +20,7 @@ CẤU HÌNH API (tùy chọn):
 """
 
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -252,6 +253,20 @@ TIMEFRAMES = {
     "W1 (Tuần)":     ("1week","1wk",  "730d", 100),
 }
 
+@st.cache_data(ttl=20)
+def fetch_ohlcv_yahoo(yf_ticker: str, yf_interval: str, yf_period: str) -> pd.DataFrame:
+    """Tải OHLCV từ Yahoo Finance — miễn phí, không giới hạn."""
+    try:
+        df = yf.download(yf_ticker, interval=yf_interval, period=yf_period,
+                         progress=False, auto_adjust=True)
+        if df.empty:
+            return pd.DataFrame()
+        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+        return df[["Open","High","Low","Close","Volume"]].dropna()
+    except Exception as e:
+        return pd.DataFrame()
+
+
 def fetch_realtime_price(pair_name: str) -> float | None:
     """
     Lấy giá tức thì từ ExchangeRate-API — miễn phí, không cần key, cập nhật mỗi 3s.
@@ -339,14 +354,28 @@ def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd
 
 def fetch_ohlcv(pair_name: str, tf_label: str) -> tuple[pd.DataFrame, str]:
     """
-    Lấy dữ liệu từ Twelve Data.
+    Ưu tiên Twelve Data, fallback Yahoo Finance.
     Trả về (DataFrame, source_name)
     """
-    td_sym, _, __ = PAIRS[pair_name]
-    td_interval, _yf, _period, outputsize = TIMEFRAMES[tf_label]
+    td_sym, yf_ticker, _ = PAIRS[pair_name]
+    td_interval, yf_interval, yf_period, outputsize = TIMEFRAMES[tf_label]
+
+    # Thử Twelve Data
     df = fetch_ohlcv_twelvedata(td_sym, td_interval, outputsize)
     if not df.empty:
         return df, "Twelve Data ⚡"
+
+    # Fallback Yahoo Finance
+    df = fetch_ohlcv_yahoo(yf_ticker, yf_interval, yf_period)
+    if not df.empty:
+        # Resample 4H nếu cần (Yahoo không có 4H native)
+        if tf_label == "H4 (4 giờ)":
+            df = df.resample("4h").agg({
+                "Open":"first","High":"max",
+                "Low":"min","Close":"last","Volume":"sum"
+            }).dropna()
+        return df, "Yahoo Finance"
+
     return pd.DataFrame(), "Lỗi kết nối"
 
 
