@@ -60,210 +60,218 @@ st.set_page_config(
 # ── CSS giao diện sáng ───────────────────────────────────
 st.markdown("""
 <style>
-  /* ── Nền sáng tổng thể ── */
-  .stApp {
-    background-color: #f0f4f8;
-    color: #1a2332;
-    font-family: 'Inter', sans-serif;
-  }
-  section[data-testid="stSidebar"] {
-    background: linear-gradient(160deg, #1e3a5f 0%, #0f2440 100%);
-    border-right: 1px solid #2a4a7f;
-  }
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap');
 
-  /* ── Sidebar text ── */
-  section[data-testid="stSidebar"] * { color: #c8dff5 !important; }
-  section[data-testid="stSidebar"] h1,
-  section[data-testid="stSidebar"] h2,
-  section[data-testid="stSidebar"] h3 { color: #ffffff !important; }
-  section[data-testid="stSidebar"] .stSelectbox label,
-  section[data-testid="stSidebar"] .stCheckbox label { color: #a0c4e8 !important; font-size: 13px; }
+/* ══ RESET STREAMLIT ══ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.stApp { background: #070b14 !important; font-family: 'Sora', sans-serif; color: #e2e8f0; }
+.block-container { padding: 0 0 80px 0 !important; max-width: 100% !important; }
+#MainMenu, footer, header, .stDeployButton,
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"] { display: none !important; }
 
-  /* Selectbox trong sidebar */
-  section[data-testid="stSidebar"] .stSelectbox > div > div {
-    background: rgba(255,255,255,0.08) !important;
-    border: 1px solid rgba(255,255,255,0.2) !important;
-    color: #ffffff !important;
-    border-radius: 8px !important;
-  }
+/* ── Xóa gap mặc định của Streamlit ── */
+div[data-testid="stVerticalBlock"] > div { gap: 0 !important; }
+div[data-testid="column"] { padding: 0 !important; gap: 0 !important; }
+div[data-testid="stHorizontalBlock"] { gap: 6px !important; padding: 0 6px !important; }
 
-  /* ── Tiêu đề main ── */
-  h1, h2, h3 { color: #0d47a1 !important; font-family: 'Inter', sans-serif; font-weight: 700; }
-  p, span, div { color: #1a2332; }
+/* ══ SIDEBAR ══ */
+section[data-testid="stSidebar"] {
+  background: #0c1121 !important;
+  border-right: 1px solid #1a2540 !important;
+}
+section[data-testid="stSidebar"] * { color: #7c93b8 !important; }
+section[data-testid="stSidebar"] h3 { color: #e2e8f0 !important; font-size: 13px !important; font-weight: 700 !important; }
+section[data-testid="stSidebar"] .stSelectbox > div > div {
+  background: #131d35 !important; border: 1px solid #1f3052 !important;
+  color: #e2e8f0 !important; border-radius: 8px !important; font-size: 13px !important;
+}
+section[data-testid="stSidebar"] .stCheckbox label { color: #7c93b8 !important; font-size: 13px !important; }
+section[data-testid="stSidebar"] .stButton > button {
+  background: #1d4ed8 !important; border: none !important; border-radius: 8px !important;
+  color: #fff !important; font-weight: 700 !important; font-size: 13px !important; padding: 10px !important;
+}
 
-  /* ── Metric cards ── */
-  div[data-testid="metric-container"] {
-    background: #ffffff;
-    border: 1px solid #dce8f5;
-    border-radius: 12px;
-    padding: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  }
-  div[data-testid="metric-container"] label { color: #5a7a9a !important; font-size: 12px; font-weight: 500; }
-  div[data-testid="metric-container"] div[data-testid="metric-value"] {
-    color: #0d47a1 !important;
-    font-family: 'Space Mono', monospace;
-    font-weight: 700;
-  }
-  div[data-testid="metric-container"] div[data-testid="metric-delta"] { font-size: 12px; }
+/* ══ SELECTBOX MAIN PAGE ══ */
+div[data-testid="stSelectbox"] > div > div {
+  background: #0f172a !important; border: 1px solid #1e3a5f !important;
+  color: #e2e8f0 !important; border-radius: 10px !important;
+  font-size: 14px !important; font-weight: 600 !important;
+  font-family: 'Sora', sans-serif !important;
+}
+div[data-testid="stSelectbox"] { padding: 0 !important; margin: 0 !important; }
+div.row-widget.stSelectbox { padding: 3px 0 !important; }
 
-  /* ── Signal boxes ── */
-  .signal-buy {
-    background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
-    border: 2px solid #43a047;
-    border-radius: 14px;
-    padding: 22px;
-    text-align: center;
-    box-shadow: 0 4px 16px rgba(67,160,71,0.15);
-  }
-  .signal-sell {
-    background: linear-gradient(135deg, #ffebee, #fce4ec);
-    border: 2px solid #e53935;
-    border-radius: 14px;
-    padding: 22px;
-    text-align: center;
-    box-shadow: 0 4px 16px rgba(229,57,53,0.15);
-  }
-  .signal-neutral {
-    background: linear-gradient(135deg, #fff8e1, #fffde7);
-    border: 2px solid #f9a825;
-    border-radius: 14px;
-    padding: 22px;
-    text-align: center;
-    box-shadow: 0 4px 16px rgba(249,168,37,0.15);
-  }
+/* ══ METRIC — ẩn hết, dùng HTML riêng ══ */
+div[data-testid="metric-container"] { display: none !important; }
 
-  /* ── Nút bấm ── */
-  .stButton > button {
-    background: linear-gradient(135deg, #1565c0, #0d47a1) !important;
-    color: #ffffff !important;
-    font-weight: 700 !important;
-    border: none !important;
-    border-radius: 10px !important;
-    width: 100% !important;
-    padding: 12px !important;
-    font-size: 14px !important;
-    letter-spacing: 0.3px !important;
-    transition: all 0.2s !important;
-  }
-  .stButton > button:hover {
-    background: linear-gradient(135deg, #1976d2, #1565c0) !important;
-    box-shadow: 0 6px 20px rgba(13,71,161,0.35) !important;
-    transform: translateY(-1px) !important;
-  }
+/* ══ EXPANDER ══ */
+details { background: #0c1121 !important; border: 1px solid #1a2540 !important; border-radius: 8px !important; margin: 4px 6px !important; overflow: hidden; }
+details summary { font-size: 12px !important; color: #64748b !important; font-weight: 600 !important; padding: 10px 14px !important; cursor: pointer; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details[open] summary { border-bottom: 1px solid #1a2540; color: #94a3b8 !important; }
+.streamlit-expanderContent { padding: 8px !important; }
 
-  /* ── Card thông tin chỉ báo ── */
-  .ind-card {
-    background: #ffffff;
-    border: 1px solid #dce8f5;
-    border-radius: 10px;
-    padding: 10px 14px;
-    margin-bottom: 7px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-    transition: box-shadow 0.2s;
-  }
-  .ind-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-  .ind-card.bullish { border-left: 4px solid #43a047; background: #f1f8f1; }
-  .ind-card.bearish { border-left: 4px solid #e53935; background: #fff5f5; }
-  .ind-card.neutral { border-left: 4px solid #f9a825; background: #fffdf0; }
+/* ══ PLOTLY ══ */
+div[data-testid="stPlotlyChart"] { padding: 0 6px !important; }
+.js-plotly-plot { border-radius: 10px !important; overflow: hidden; border: 1px solid #1a2540 !important; }
+.plotly .bg { fill: #0c1121 !important; }
 
-  /* ── AI analysis box ── */
-  .ai-box {
-    background: linear-gradient(135deg, #e3f2fd, #f0f7ff);
-    border: 1px solid #90caf9;
-    border-left: 4px solid #1565c0;
-    border-radius: 12px;
-    padding: 20px 24px;
-    line-height: 1.8;
-    font-size: 14px;
-    color: #1a2332;
-    box-shadow: 0 2px 12px rgba(21,101,192,0.08);
-  }
+/* ══ DATAFRAME ══ */
+div[data-testid="stDataFrame"] { padding: 0 6px !important; }
+.stDataFrame { border: 1px solid #1a2540; border-radius: 8px; overflow: hidden; }
 
-  /* ── Divider ── */
-  hr { border-color: #dce8f5 !important; margin: 16px 0 !important; }
+/* ══ SCROLLBAR ══ */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: #070b14; }
+::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 2px; }
 
-  /* ── Expander ── */
-  .streamlit-expanderHeader {
-    background: #ffffff !important;
-    border: 1px solid #dce8f5 !important;
-    border-radius: 8px !important;
-    color: #0d47a1 !important;
-    font-weight: 600 !important;
-  }
+/* ══ SPINNER ══ */
+.stSpinner { color: #3b82f6 !important; }
 
-  /* ── Dataframe ── */
-  .stDataFrame { border: 1px solid #dce8f5; border-radius: 10px; overflow: hidden; }
+/* ══ ALERT / INFO ══ */
+.stAlert { margin: 4px 6px !important; border-radius: 8px !important; font-size: 12px !important; }
 
-  /* ══════════════════════════════════════
-     MOBILE RESPONSIVE
-  ══════════════════════════════════════ */
-  /* ── Quick selector bar ── */
-  div[data-testid="stSelectbox"] > div > div {
-    border-radius: 10px !important;
-    border: 1.5px solid #dce8f5 !important;
-    background: #ffffff !important;
-    font-weight: 600 !important;
-    font-size: 14px !important;
-  }
+/* ══ APP SHELL CLASSES ══ */
 
-  @media (max-width: 768px) {
-    /* Thu nhỏ header */
-    .forex-header h1 { font-size: 18px !important; }
-    .forex-header .live-badge { font-size: 9px !important; padding: 3px 8px !important; }
+/* Header bar */
+.fx-header {
+  background: linear-gradient(90deg, #0f1e40 0%, #0c1832 100%);
+  border-bottom: 1px solid #1a2d50;
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.fx-header-logo {
+  font-family: 'Sora', sans-serif;
+  font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.5px;
+  flex-shrink: 0;
+}
+.fx-header-logo span { color: #60a5fa; font-weight: 500; }
+.fx-live-dot {
+  width: 6px; height: 6px; background: #22c55e; border-radius: 50%;
+  box-shadow: 0 0 6px #22c55e; flex-shrink: 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(0.8)} }
+.fx-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px; color: #22c55e; letter-spacing: 1px; font-weight: 700;
+  background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.25);
+  padding: 2px 7px; border-radius: 20px;
+}
+.fx-header-right { margin-left: auto; font-size: 10px; color: #3b5280; font-family: 'JetBrains Mono', monospace; }
 
-    /* Metric cards nhỏ hơn */
-    div[data-testid="metric-container"] {
-      padding: 8px !important;
-      border-radius: 8px !important;
-    }
-    div[data-testid="metric-container"] label { font-size: 10px !important; }
-    div[data-testid="metric-container"] div[data-testid="metric-value"] {
-      font-size: 13px !important;
-    }
+/* Section label */
+.fx-sec {
+  font-size: 9px; color: #334155; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  padding: 10px 14px 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+.fx-sec::after { content:''; flex:1; height:1px; background:#0f1e35; }
 
-    /* Signal cards gọn hơn */
-    .signal-buy, .signal-sell, .signal-neutral {
-      padding: 12px !important;
-      border-radius: 10px !important;
-    }
-    .signal-buy div, .signal-sell div, .signal-neutral div {
-      font-size: 20px !important;
-    }
+/* Price card */
+.fx-price-card {
+  margin: 0 6px 4px;
+  background: #0c1121; border: 1px solid #1a2d50;
+  border-radius: 12px; padding: 12px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.fx-price { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: #f8fafc; line-height: 1; }
+.fx-pair  { font-size: 10px; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.fx-chg.up   { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #22c55e; font-weight: 600; margin-top: 4px; }
+.fx-chg.down { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ef4444; font-weight: 600; margin-top: 4px; }
+.fx-ohlc { text-align: right; }
+.fx-ohlc-row { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #475569; margin-bottom: 2px; }
+.fx-ohlc-row b { color: #94a3b8; }
+.fx-rt-badge { font-size: 9px; font-family: 'JetBrains Mono', monospace; color: #22c55e; background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.2); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 6px; }
 
-    /* Indicator cards gọn */
-    .ind-card { padding: 7px 10px !important; margin-bottom: 5px !important; }
-    .ind-card span { font-size: 11px !important; }
+/* Signal cards */
+.fx-sig-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 6px; }
+.fx-sig {
+  border-radius: 10px; padding: 11px 10px; position: relative; overflow: hidden;
+}
+.fx-sig.buy  { background: #031a0e; border: 1px solid #16a34a; }
+.fx-sig.sell { background: #1a0303; border: 1px solid #dc2626; }
+.fx-sig.neut { background: #161106; border: 1px solid #b45309; }
+.fx-sig-lbl  { font-size: 8px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #334155; margin-bottom: 5px; font-family: 'JetBrains Mono', monospace; }
+.fx-sig-act  { font-size: 19px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; }
+.fx-sig-act.buy  { color: #4ade80; }
+.fx-sig-act.sell { color: #f87171; }
+.fx-sig-act.neut { color: #fbbf24; }
+.fx-sig-conf { font-size: 10px; font-family: 'JetBrains Mono', monospace; margin-top: 3px; }
+.fx-sig-conf.buy  { color: #86efac; }
+.fx-sig-conf.sell { color: #fca5a5; }
+.fx-sig-conf.neut { color: #fde68a; }
 
-    /* Ẩn bớt padding */
-    .block-container { padding: 0.5rem 0.5rem 0 !important; }
+/* TP/SL inside signal */
+.fx-tpsl { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; margin-top: 8px; }
+.fx-tpsl-item { border-radius: 5px; padding: 4px; text-align: center; }
+.fx-tpsl-item.tp    { background: rgba(22,163,74,.15); }
+.fx-tpsl-item.entry { background: rgba(30,58,138,.2); }
+.fx-tpsl-item.sl    { background: rgba(220,38,38,.15); }
+.fx-tpsl-lbl { font-size: 8px; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 700; }
+.fx-tpsl-val { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-tpsl-item.tp    .fx-tpsl-val { color: #4ade80; }
+.fx-tpsl-item.entry .fx-tpsl-val { color: #93c5fd; }
+.fx-tpsl-item.sl    .fx-tpsl-val { color: #f87171; }
 
-    /* Sidebar collapse mặc định trên mobile */
-  }
+/* Indicator chips */
+.fx-ind-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 6px; }
+.fx-ind-chip {
+  background: #0c1121; border: 1px solid #0f1e35;
+  border-radius: 8px; padding: 7px 9px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.fx-ind-chip.bull { border-left: 2px solid #16a34a; }
+.fx-ind-chip.bear { border-left: 2px solid #dc2626; }
+.fx-ind-chip.neut { border-left: 2px solid #b45309; }
+.fx-ind-name { font-size: 9px; color: #334155; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.fx-ind-right { text-align: right; }
+.fx-ind-val  { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #94a3b8; font-weight: 600; }
+.fx-ind-sig  { font-size: 10px; color: #475569; margin-top: 1px; font-size: 9px; }
 
-  @media (max-width: 480px) {
-    /* Rất nhỏ — smartphone */
-    div[data-testid="metric-container"] label { font-size: 9px !important; }
-    div[data-testid="metric-container"] div[data-testid="metric-value"] {
-      font-size: 12px !important;
-    }
-    .ind-card span { font-size: 10px !important; }
-  }
+/* Live bar */
+.fx-livebar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 14px; background: #040d08; border-bottom: 1px solid #0d2016;
+}
+.fx-livebar-dot { width: 5px; height: 5px; background: #22c55e; border-radius: 50%; animation: pulse 1.4s infinite; flex-shrink: 0; }
+.fx-livebar-txt { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #22c55e; font-weight: 600; }
+.fx-livebar-time { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #1e3a5f; }
 
-  /* ── Code ── */
-  code { background: #e8f0fe !important; color: #1565c0 !important; border-radius: 4px; padding: 2px 6px; }
+/* Sentiment bar */
+.fx-sent { margin: 0 6px; background: #0c1121; border: 1px solid #1a2d50; border-radius: 10px; overflow: hidden; }
+.fx-sent-top { padding: 11px 13px; display: flex; justify-content: space-between; align-items: center; }
+.fx-sent-title { font-size: 8px; color: #334155; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+.fx-sent-act  { font-size: 17px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+.fx-sent-sub  { font-size: 9px; color: #334155; font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+.fx-sent-counts { display: grid; grid-template-columns: 1fr 1fr 1fr; border-top: 1px solid #0f1e35; }
+.fx-sent-cnt { padding: 8px 4px; text-align: center; border-right: 1px solid #0f1e35; }
+.fx-sent-cnt:last-child { border-right: none; }
+.fx-sent-cnt-n { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; }
+.fx-sent-cnt-l { font-size: 8px; color: #334155; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-top: 1px; }
 
-  /* ── Caption / footer ── */
-  .stCaption { color: #7a9ab5 !important; font-size: 11px; }
+/* News item */
+.fx-news { margin: 4px 6px; background: #0c1121; border: 1px solid #0f1e35; border-radius: 8px; padding: 9px 11px; }
+.fx-news.bull { border-left: 2px solid #16a34a; }
+.fx-news.bear { border-left: 2px solid #dc2626; }
+.fx-news.neut { border-left: 2px solid #b45309; }
+.fx-news-title { font-size: 12px; color: #94a3b8; line-height: 1.35; font-weight: 500; }
+.fx-news-foot  { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
+.fx-news-time  { font-size: 9px; color: #1e3a5f; font-family: 'JetBrains Mono', monospace; }
+.fx-news-tag   { font-size: 8px; font-weight: 700; font-family: 'JetBrains Mono', monospace; padding: 2px 5px; border-radius: 3px; }
+.fx-news-tag.bull { background: #031a0e; color: #4ade80; }
+.fx-news-tag.bear { background: #1a0303; color: #f87171; }
+.fx-news-tag.neut { background: #161106; color: #fbbf24; }
 
-  /* ── Warning/info boxes ── */
-  .stAlert { border-radius: 10px !important; }
-
-  /* Ẩn watermark */
-  #MainMenu, footer { visibility: hidden; }
+/* AI box */
+.fx-ai-box {
+  margin: 0 6px;
+  background: #0a1628; border: 1px solid #1e3a5f; border-left: 3px solid #3b82f6;
+  border-radius: 10px; padding: 14px; font-size: 13px; line-height: 1.7; color: #94a3b8;
+}
+.fx-ai-title { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; color: #3b82f6; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1001,26 +1009,15 @@ def send_telegram(pair: str, sig: dict) -> bool:
 def main():
     # ── Header ──
     st.markdown("""
-    <div class="forex-header" style="display:flex;align-items:center;gap:10px;margin-bottom:6px;
-                background:linear-gradient(135deg,#1565c0,#0d47a1);
-                padding:14px 18px;border-radius:12px;
-                box-shadow:0 4px 20px rgba(13,71,161,0.2)">
-      <div style="width:10px;height:10px;background:#69f0ae;border-radius:50%;
-                  box-shadow:0 0 8px #69f0ae;flex-shrink:0"></div>
-      <h1 style="margin:0;font-size:22px;letter-spacing:-0.5px;color:#ffffff !important;white-space:nowrap">
-        FOREX<span style="color:#90caf9;font-weight:400">AI</span> Bot
-      </h1>
-      <div class="live-badge" style="background:rgba(105,240,174,0.15);border:1px solid rgba(105,240,174,0.4);
-                  color:#69f0ae;padding:3px 10px;border-radius:20px;font-size:10px;
-                  letter-spacing:1.5px;font-family:monospace;font-weight:700;white-space:nowrap">● LIVE</div>
-      <div style="margin-left:auto;font-family:monospace;font-size:11px;color:rgba(255,255,255,0.6);
-                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-        Yahoo · Groq AI
-      </div>
+    <div class="fx-header">
+      <div class="fx-live-dot"></div>
+      <div class="fx-header-logo">FOREX<span>AI</span></div>
+      <div class="fx-badge">LIVE</div>
+      <div class="fx-header-right">Yahoo · Groq</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Selector nhanh ngay dưới header (luôn hiển thị, kể cả mobile) ──
+        # ── Selector nhanh ngay dưới header (luôn hiển thị, kể cả mobile) ──
     mc1, mc2 = st.columns([3, 2])
     with mc1:
         pair = st.selectbox("📌 Cặp tiền", list(PAIRS.keys()), index=0,
@@ -1108,234 +1105,200 @@ def main():
     # LIVE DASHBOARD: cập nhật mỗi 3 giây
     # ══════════════════════════════════════════════
     def live_dashboard():
-        # Tải dữ liệu mới
-        df_raw, data_source = fetch_ohlcv(pair, tf_label)
+        df_raw, data_src = fetch_ohlcv(pair, tf_label)
         if df_raw.empty:
-            st.error("❌ Không thể tải dữ liệu. Kiểm tra API key hoặc kết nối mạng.")
+            st.error("❌ Không tải được dữ liệu.")
             return
-
-        df = df_raw.copy()
-        df = add_indicators(df)
+        df = add_indicators(df_raw.copy())
         if len(df) < 30:
             st.warning("⚠️ Không đủ dữ liệu.")
             return
 
-        sig_short = compute_signal_short(df)
-        sig_long  = compute_signal_long(df)
+        sig_s = compute_signal_short(df)
+        sig_l = compute_signal_long(df)
+        news  = fetch_forex_news(pair)
+        sent  = analyze_news_sentiment(news)
 
-        # Fetch tin tức + sentiment
-        news_items  = fetch_forex_news(pair)
-        news_sent   = analyze_news_sentiment(news_items)
+        nb    = sent["score"]
+        csc   = sig_s["score"] + nb
+        sig_s["action"]     = "BUY" if csc>=4 else "SELL" if csc<=-4 else "NEUTRAL"
+        sig_s["confidence"] = min(95, sig_s["confidence"] + (5 if sent["action"]==sig_s["action"] else 0))
+        sig   = sig_s
 
-        # Tích hợp news sentiment vào tín hiệu ngắn hạn
-        news_boost = news_sent["score"]
-        combined_score = sig_short["score"] + news_boost
-        if combined_score >= 4:
-            sig_short["action"] = "BUY"
-        elif combined_score <= -4:
-            sig_short["action"] = "SELL"
-        else:
-            sig_short["action"] = "NEUTRAL"
-        sig_short["news_score"] = news_boost
-        sig_short["combined_score"] = combined_score
-        sig_short["confidence"] = min(95, sig_short["confidence"] +
-                                      (5 if news_sent["action"] == sig_short["action"] else 0))
+        last  = df.iloc[-1]
+        prev  = df.iloc[-2]
+        rtp   = fetch_realtime_price(pair)
+        price = rtp if rtp else float(last["Close"])
+        chg   = (price - float(prev["Close"])) / float(prev["Close"]) * 100
+        now_s = datetime.now().strftime("%H:%M:%S")
 
-        sig = sig_short  # dùng cho âm thanh/telegram
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+        # âm thanh & telegram
+        prev_act = st.session_state.get("prev_action","")
+        if prev_act and prev_act != sig["action"] and sig["action"] != "NEUTRAL":
+            freq = "880" if sig["action"]=="BUY" else "440"
+            st.markdown(f"""<script>try{{var c=new AudioContext();var o=c.createOscillator();
+            var g=c.createGain();o.connect(g);g.connect(c.destination);
+            o.frequency.value={freq};g.gain.setValueAtTime(0.3,c.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.6);
+            o.start();o.stop(c.currentTime+0.6);}}catch(e){{}}</script>""",
+            unsafe_allow_html=True)
+            if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+                send_telegram(pair, sig)
+        st.session_state["prev_action"] = sig["action"]
 
-        # Giá realtime từ ExchangeRate API
-        realtime_price = fetch_realtime_price(pair)
-        price = realtime_price if realtime_price else float(last["Close"])
-        change_pct = (price - float(prev["Close"])) / float(prev["Close"]) * 100
-        now_str = datetime.now().strftime("%H:%M:%S")
-
-        # ── Thanh LIVE ──
+        # ─── LIVE BAR ───
         st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:10px;
-                    background:#e8f5e9;border:1px solid #a5d6a7;
-                    border-radius:8px;padding:7px 14px;margin-bottom:12px">
-          <div style="width:8px;height:8px;background:#43a047;border-radius:50%;
-                      animation:pulse 1s infinite;flex-shrink:0"></div>
-          <span style="font-family:monospace;font-size:12px;color:#2e7d32;font-weight:600">
-            ⚡ LIVE · {data_source} · {now_str} · {pair} {tf_short}
-          </span>
-        </div>
-        <style>@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:0.4}}}}</style>
-        """, unsafe_allow_html=True)
+        <div class="fx-livebar">
+          <div class="fx-livebar-dot"></div>
+          <span class="fx-livebar-txt">LIVE · {data_src.replace(" ⚡","")}</span>
+          <span class="fx-livebar-time">{now_s}</span>
+        </div>""", unsafe_allow_html=True)
 
-        # ── Metrics ──
-        st.markdown(f"### 📍 {pair} · {tf_short}")
-        # Hàng 1: giá chính
-        c1, c2, c3 = st.columns(3)
-        price_label = "⚡ Giá realtime" if realtime_price else "Giá (60s)"
-        c1.metric(price_label, fmt(price), f"{change_pct:+.2f}%")
-        c2.metric("High", fmt(float(last["High"])))
-        c3.metric("Low",  fmt(float(last["Low"])))
-        # Hàng 2: chi tiết
-        c4, c5, c6 = st.columns(3)
-        c4.metric("ATR", fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "N/A")
-        c5.metric("Cập nhật", now_str)
-        c6.metric("Nguồn", data_source.replace(" ⚡",""))
-
-        st.markdown("---")
-
-        # ── Tín hiệu + Chỉ báo ──
-        # ── Hàm helper render 1 tín hiệu ──
-        def render_signal_card(s, title, icon):
-            act  = s["action"]
-            conf = s["confidence"]
-            css  = "signal-buy" if act=="BUY" else "signal-sell" if act=="SELL" else "signal-neutral"
-            em   = "📈" if act=="BUY" else "📉" if act=="SELL" else "⏸"
-            clr  = "#2e7d32" if act=="BUY" else "#c62828" if act=="SELL" else "#e65100"
-            lbl  = "TÍN HIỆU MUA" if act=="BUY" else "TÍN HIỆU BÁN" if act=="SELL" else "TRUNG TÍNH"
-            st.markdown(f"""
-            <div class="{css}" style="margin-bottom:10px">
-              <div style="font-size:10px;font-family:monospace;color:#4a7a99;
-                          letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">
-                {icon} {title}
-              </div>
-              <div style="font-size:28px;font-weight:800;color:{clr};letter-spacing:-0.5px">
-                {em} {lbl}
-              </div>
-              <div style="font-size:18px;font-weight:700;color:{clr};margin-top:2px">
-                {conf}% Tin cậy · Score {s['score']:+d}
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-            g1, g2, g3 = st.columns(3)
-            g1.metric("📍 Entry",       fmt(s["entry"]))
-            g2.metric("🎯 TP",          fmt(s["tp"]))
-            g3.metric("🛑 SL",          fmt(s["sl"]))
-            rr = abs(s["tp"]-s["entry"]) / max(abs(s["sl"]-s["entry"]), 1e-10)
-            st.caption(f"R/R: 1:{rr:.1f}")
-
-        # Tín hiệu 2 cột — tự stack dọc trên mobile
-        col_short, col_long = st.columns(2)
-        with col_short:
-            render_signal_card(sig_short, "NGẮN HẠN (Scalping)", "⚡")
-        with col_long:
-            render_signal_card(sig_long, "DÀI HẠN (Swing)", "📊")
-
-        col_ind_full = st.container()
-
-        with col_ind_full:
-            st.markdown("**🔧 Chỉ báo kỹ thuật chi tiết**")
-            col_ind_a, col_ind_b = st.columns(2)
-            ind_data = {
-                "RSI (14)":     (f"{sig['rsi']:.1f}",   sig["signals"].get("RSI",("",""))[0]),
-                "MACD":         (f"{sig['macd']:.5f}",  sig["signals"].get("MACD",("",""))[0]),
-                "EMA 20/50":    (f"{fmt(float(last['EMA_20']))} / {fmt(float(last['EMA_50']))}",
-                                 sig["signals"].get("EMA 20/50",("",""))[0]),
-                "EMA 200":      (fmt(float(last["EMA_200"])), sig["signals"].get("EMA 200",("",""))[0]),
-                "Bollinger":    (f"{fmt(float(last['BB_upper']))} / {fmt(float(last['BB_lower']))}",
-                                 sig["signals"].get("Bollinger",("",""))[0]),
-                "Stochastic %K":(f"{sig['stoch_k']:.1f}", sig["signals"].get("Stochastic",("",""))[0]),
-                "ATR (14)":     (fmt(sig["atr"]), "📊 Biến động"),
-            }
-            ind_items = list(ind_data.items())
-            half = (len(ind_items) + 1) // 2
-            for col_x, items_x in [(col_ind_a, ind_items[:half]), (col_ind_b, ind_items[half:])]:
-                with col_x:
-                    for name, (val, signal_str) in items_x:
-                        card_cls = ("ind-card bullish" if "🟢" in signal_str
-                                    else "ind-card bearish" if "🔴" in signal_str
-                                    else "ind-card neutral")
-                        st.markdown(f"""
-                        <div class="{card_cls}">
-                          <div style="font-size:11px;color:#5a7a9a;font-family:monospace;font-weight:500">{name}</div>
-                          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
-                            <span style="color:#0d47a1;font-family:monospace;font-size:12px;font-weight:700">{val}</span>
-                            <span style="font-size:11px">{signal_str}</span>
-                          </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # ── News Sentiment Section ──
-        st.markdown("**📰 Tin tức & Sentiment thị trường**")
-        ns_col1, ns_col2, ns_col3, ns_col4 = st.columns(4)
-        sent_color = "#2e7d32" if news_sent["action"]=="BUY" else "#c62828" if news_sent["action"]=="SELL" else "#e65100"
-        sent_emoji = "📈" if news_sent["action"]=="BUY" else "📉" if news_sent["action"]=="SELL" else "⏸"
-        ns_col1.metric("📰 Tin tức", f"{len(news_items)} bài")
-        ns_col2.metric("📈 Tích cực", news_sent["bull_count"])
-        ns_col3.metric("📉 Tiêu cực", news_sent["bear_count"])
-        ns_col4.metric("⏸ Trung tính", news_sent["neutral_count"])
-
-        # Thanh sentiment tổng hợp
-        sent_bg  = "linear-gradient(135deg,#e8f5e9,#f1f8e9)" if news_sent["action"]=="BUY" else                    "linear-gradient(135deg,#ffebee,#fce4ec)" if news_sent["action"]=="SELL" else                    "linear-gradient(135deg,#fff8e1,#fffde7)"
-        sent_border = "#43a047" if news_sent["action"]=="BUY" else                       "#e53935" if news_sent["action"]=="SELL" else "#f9a825"
+        # ─── PRICE CARD ───
+        chg_cls = "up" if chg >= 0 else "down"
+        chg_sym = "▲" if chg >= 0 else "▼"
+        rt_html = '<div class="fx-rt-badge">⚡ REALTIME</div>' if rtp else '<div style="height:4px"></div>'
         st.markdown(f"""
-        <div style="background:{sent_bg};border:2px solid {sent_border};border-radius:12px;
-                    padding:14px 18px;margin:8px 0;display:flex;
-                    justify-content:space-between;align-items:center">
+        <div class="fx-price-card">
           <div>
-            <div style="font-size:11px;color:#5a7a9a;font-family:monospace;
-                        letter-spacing:1.5px;text-transform:uppercase">
-              📰 Sentiment từ tin tức
-            </div>
-            <div style="font-size:22px;font-weight:800;color:{sent_color}">
-              {sent_emoji} {news_sent["action"]} · {news_sent["confidence"]}% tin cậy
-            </div>
-            <div style="font-size:11px;color:#5a7a9a;margin-top:2px">
-              Tín hiệu kỹ thuật {sig_short["score"]:+d} + Tin tức {news_boost:+d}
-              = Tổng hợp <b style="color:{sent_color}">{combined_score:+d}</b>
-            </div>
+            <div class="fx-pair">{pair} · {tf_short}</div>
+            <div class="fx-price">{fmt(price)}</div>
+            <div class="fx-chg {chg_cls}">{chg_sym} {abs(chg):.3f}%</div>
           </div>
-          <div style="text-align:right;font-family:monospace;font-size:28px">
-            {"🟢" if news_sent["action"]=="BUY" else "🔴" if news_sent["action"]=="SELL" else "🟡"}
+          <div class="fx-ohlc">
+            {rt_html}
+            <div class="fx-ohlc-row"><b>H</b> {fmt(float(last["High"]))}</div>
+            <div class="fx-ohlc-row"><b>L</b> {fmt(float(last["Low"]))}</div>
+            <div class="fx-ohlc-row"><b>ATR</b> {fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "—"}</div>
           </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-        # Danh sách tin tức
-        if news_items:
-            with st.expander("📋 Xem chi tiết tin tức"):
-                for n in news_items:
-                    ic = "🟢" if n["sentiment"]=="bullish" else "🔴" if n["sentiment"]=="bearish" else "⚪"
-                    bg = "#f1f8f1" if n["sentiment"]=="bullish" else "#fff5f5" if n["sentiment"]=="bearish" else "#fffdf0"
-                    bd = "#43a047" if n["sentiment"]=="bullish" else "#e53935" if n["sentiment"]=="bearish" else "#f9a825"
+        # ─── SIGNAL CARDS ───
+        def _sig(s, title, icon):
+            a = s["action"]
+            ac = a.lower() if a != "NEUTRAL" else "neut"
+            em = "📈" if a=="BUY" else "📉" if a=="SELL" else "⏸"
+            lbl= "MUA" if a=="BUY" else "BÁN" if a=="SELL" else "TRUNG TÍNH"
+            rr = abs(s["tp"]-s["entry"]) / max(abs(s["sl"]-s["entry"]),1e-10)
+            return f"""
+            <div class="fx-sig {ac}">
+              <div class="fx-sig-lbl">{icon} {title}</div>
+              <div class="fx-sig-act {ac}">{em} {lbl}</div>
+              <div class="fx-sig-conf {ac}">{s["confidence"]}% · {s["score"]:+d}pt</div>
+              <div class="fx-tpsl">
+                <div class="fx-tpsl-item tp">
+                  <div class="fx-tpsl-lbl">TP</div>
+                  <div class="fx-tpsl-val">{fmt(s["tp"])}</div>
+                </div>
+                <div class="fx-tpsl-item entry">
+                  <div class="fx-tpsl-lbl">Entry</div>
+                  <div class="fx-tpsl-val">{fmt(s["entry"])}</div>
+                </div>
+                <div class="fx-tpsl-item sl">
+                  <div class="fx-tpsl-lbl">SL</div>
+                  <div class="fx-tpsl-val">{fmt(s["sl"])}</div>
+                </div>
+              </div>
+              <div style="font-size:8px;color:#1e3a5f;margin-top:4px;font-family:JetBrains Mono,monospace;text-align:right">R/R 1:{rr:.1f}</div>
+            </div>"""
+
+        st.markdown('<div class="fx-sec">⚡ Tín hiệu giao dịch</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="fx-sig-row">
+          {_sig(sig_s,"NGẮN HẠN","⚡")}
+          {_sig(sig_l,"DÀI HẠN","📊")}
+        </div>""", unsafe_allow_html=True)
+
+        # ─── INDICATORS ───
+        st.markdown('<div class="fx-sec">📊 Chỉ báo kỹ thuật</div>', unsafe_allow_html=True)
+        sigs_dict = sig_s["signals"]
+        def _cls(sig_str):
+            return "bull" if "🟢" in sig_str else "bear" if "🔴" in sig_str else "neut"
+        def _chip(name, val, sig_str):
+            c = _cls(sig_str)
+            em= "🟢" if c=="bull" else "🔴" if c=="bear" else "⚪"
+            return f"""<div class="fx-ind-chip {c}">
+              <div class="fx-ind-name">{name}</div>
+              <div class="fx-ind-right">
+                <div class="fx-ind-val">{val}</div>
+                <div class="fx-ind-sig">{em} {sig_str.split(" ",1)[-1][:18]}</div>
+              </div>
+            </div>"""
+
+        rsi_s = sigs_dict.get("RSI",("⚪",""))[0]
+        mac_s = sigs_dict.get("MACD",("⚪",""))[0]
+        ema_s = sigs_dict.get("EMA 20/50",("⚪",""))[0]
+        e2s_s = sigs_dict.get("EMA 200",("⚪",""))[0]
+        bb_s  = sigs_dict.get("Bollinger",("⚪",""))[0]
+        stk_s = sigs_dict.get("Stochastic",("⚪",""))[0]
+
+        chips = (
+            _chip("RSI 14",  f"{sig_s['rsi']:.1f}", rsi_s) +
+            _chip("MACD",    f"{sig_s['macd']:.5f}", mac_s) +
+            _chip("EMA20/50",f"{fmt(float(last['EMA_20']))}", ema_s) +
+            _chip("EMA 200", f"{fmt(float(last['EMA_200']))}", e2s_s) +
+            _chip("Bollinger",f"↑{fmt(float(last['BB_upper']))}", bb_s) +
+            _chip("Stoch%K", f"{sig_s['stoch_k']:.1f}", stk_s)
+        )
+        st.markdown(f'<div class="fx-ind-grid">{chips}</div>', unsafe_allow_html=True)
+
+        # ─── SENTIMENT ───
+        st.markdown('<div class="fx-sec">📰 Sentiment tin tức</div>', unsafe_allow_html=True)
+        sa  = sent["action"]
+        sc  = "#4ade80" if sa=="BUY" else "#ef4444" if sa=="SELL" else "#fbbf24"
+        sem = "📈" if sa=="BUY" else "📉" if sa=="SELL" else "⏸"
+        slbl= "TĂNG" if sa=="BUY" else "GIẢM" if sa=="SELL" else "TRUNG TÍNH"
+        st.markdown(f"""
+        <div class="fx-sent">
+          <div class="fx-sent-top">
+            <div>
+              <div class="fx-sent-title">Sentiment tổng hợp</div>
+              <div class="fx-sent-act" style="color:{sc}">{sem} {slbl} · {sent["confidence"]}%</div>
+              <div class="fx-sent-sub">KT {sig_s["score"]:+d} + News {nb:+d} = <b style="color:{sc}">{csc:+d}</b></div>
+            </div>
+            <div style="font-size:28px">{sem}</div>
+          </div>
+          <div class="fx-sent-counts">
+            <div class="fx-sent-cnt">
+              <div class="fx-sent-cnt-n" style="color:#4ade80">{sent["bull_count"]}</div>
+              <div class="fx-sent-cnt-l">Tích cực</div>
+            </div>
+            <div class="fx-sent-cnt">
+              <div class="fx-sent-cnt-n" style="color:#ef4444">{sent["bear_count"]}</div>
+              <div class="fx-sent-cnt-l">Tiêu cực</div>
+            </div>
+            <div class="fx-sent-cnt">
+              <div class="fx-sent-cnt-n" style="color:#fbbf24">{sent["neutral_count"]}</div>
+              <div class="fx-sent-cnt-l">Trung tính</div>
+            </div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # Tin tức chi tiết
+        if news:
+            with st.expander(f"📋 {len(news)} tin tức · bấm để xem"):
+                for n in news:
+                    c2 = "bull" if n["sentiment"]=="bullish" else "bear" if n["sentiment"]=="bearish" else "neut"
+                    tag= "TĂNG" if n["sentiment"]=="bullish" else "GIẢM" if n["sentiment"]=="bearish" else "NGANG"
                     st.markdown(f"""
-                    <div style="background:{bg};border-left:3px solid {bd};
-                                border-radius:8px;padding:10px 14px;margin-bottom:6px">
-                      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                        <span style="font-size:13px;font-weight:600;color:#1a2332;flex:1">{ic} {n["title"]}</span>
-                        <span style="font-size:10px;color:#5a7a9a;margin-left:8px;white-space:nowrap">{n["time"][:16]}</span>
+                    <div class="fx-news {c2}">
+                      <div class="fx-news-title">{n["title"]}</div>
+                      <div class="fx-news-foot">
+                        <span class="fx-news-time">{n["time"][:16]}</span>
+                        <span class="fx-news-tag {c2}">{tag} {n["score"]:+d}</span>
                       </div>
-                      <div style="font-size:11px;color:#5a7a9a;margin-top:4px">
-                        Sentiment: <b>{n["sentiment"].upper()}</b> · Score: {n["score"]:+d}
-                      </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.info("Chưa tải được tin tức. Thử lại sau.")
+                    </div>""", unsafe_allow_html=True)
 
-        st.markdown("---")
-
-        # ── Biểu đồ ──
-        st.markdown("**📈 Biểu đồ nến**")
+        # ─── CHART ───
+        st.markdown('<div class="fx-sec">📈 Biểu đồ nến</div>', unsafe_allow_html=True)
         fig = build_chart(df, pair)
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── OHLCV table ──
-        with st.expander("📋 Dữ liệu OHLCV gần nhất"):
+        with st.expander("📋 OHLCV gần nhất"):
             st.dataframe(
-                df.tail(20)[["Open","High","Low","Close","Volume",
-                             "RSI","MACD","EMA_20","EMA_50"]].round(5),
+                df.tail(10)[["Open","High","Low","Close","RSI","MACD","EMA_20"]].round(5),
                 use_container_width=True,
             )
-
-        # ── Footer ──
-        st.markdown(f"""
-        <div style="text-align:center;font-family:monospace;font-size:11px;color:#7a9ab5;
-                    background:#ffffff;border:1px solid #dce8f5;border-radius:8px;
-                    padding:10px;margin-top:8px">
-          📊 ForexAI Bot &nbsp;·&nbsp; {data_source} &nbsp;·&nbsp;
-          Groq Llama 3 (Free) &nbsp;·&nbsp; 🕐 {now_str}
-        </div>
-        """, unsafe_allow_html=True)
 
     # Gọi live_dashboard
     live_dashboard()
@@ -1360,9 +1323,9 @@ def main():
             sig_ai = compute_signal(df_ai)
             analysis = get_ai_analysis(pair, tf_short, sig_ai)
         st.markdown(f"""
-        <div class="ai-box">
+        <div class="fx-ai-box">
           <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;
-                      text-transform:uppercase;color:#1565c0;margin-bottom:10px;font-family:monospace">
+                      text-transform:uppercase;color:#3b82f6;margin-bottom:10px;font-family:JetBrains Mono,monospace">
             🤖 GROQ AI ANALYSIS
           </div>
           {analysis}
