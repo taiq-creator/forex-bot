@@ -491,6 +491,146 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ════════════════════════════════════════════════════════
+#  TIN TỨC & SENTIMENT ANALYSIS
+# ════════════════════════════════════════════════════════
+
+# Từ khóa tích cực/tiêu cực cho Forex
+BULLISH_WORDS = [
+    "rise", "rising", "surge", "surges", "gain", "gains", "rally", "rallies",
+    "strengthen", "strengthens", "advances", "higher", "up", "bullish", "hawkish",
+    "beat", "beats", "exceeds", "strong", "stronger", "growth", "tăng", "mạnh",
+    "positive", "optimistic", "recovery", "recovers", "boost", "boosts",
+    "rate hike", "hike", "hikes", "outperform", "buy", "demand"
+]
+BEARISH_WORDS = [
+    "fall", "falling", "drop", "drops", "decline", "declines", "plunge", "plunges",
+    "weaken", "weakens", "lower", "down", "bearish", "dovish", "miss", "misses",
+    "weak", "weaker", "recession", "slow", "slows", "risk", "concern", "giảm", "yếu",
+    "negative", "pessimistic", "selloff", "sell", "cut", "cuts", "rate cut",
+    "disappoint", "disappoints", "crisis", "fear", "fears", "underperform"
+]
+
+# Map cặp tiền → từ khóa tìm kiếm tin tức
+PAIR_KEYWORDS = {
+    "EUR": ["EUR", "euro", "ECB", "eurozone", "European"],
+    "GBP": ["GBP", "pound", "sterling", "BOE", "Bank of England", "UK", "Britain"],
+    "USD": ["USD", "dollar", "Fed", "Federal Reserve", "FOMC", "US economy"],
+    "JPY": ["JPY", "yen", "BOJ", "Bank of Japan", "Japan"],
+    "AUD": ["AUD", "aussie", "RBA", "Reserve Bank Australia"],
+    "CAD": ["CAD", "loonie", "BOC", "Bank of Canada", "oil"],
+    "CHF": ["CHF", "franc", "SNB", "Swiss"],
+    "NZD": ["NZD", "kiwi", "RBNZ"],
+    "XAU": ["gold", "XAU", "bullion", "safe haven"],
+    "XAG": ["silver", "XAG"],
+    "WTI": ["oil", "crude", "WTI", "OPEC", "energy"],
+    "BTC": ["bitcoin", "BTC", "crypto", "cryptocurrency"],
+    "ETH": ["ethereum", "ETH", "crypto"],
+}
+
+@st.cache_data(ttl=300)  # cache 5 phút
+def fetch_forex_news(pair_name: str) -> list:
+    """Lấy tin tức Forex từ RSS feeds miễn phí."""
+    td_sym = PAIRS[pair_name][0]  # "EUR/USD"
+    currencies = td_sym.replace("/", " ").split()
+
+    # Tổng hợp từ khóa tìm kiếm
+    keywords = []
+    for cur in currencies:
+        keywords.extend(PAIR_KEYWORDS.get(cur, [cur]))
+    keywords = list(dict.fromkeys(keywords))[:5]  # top 5 unique
+
+    news_items = []
+
+    # RSS feeds miễn phí cho Forex
+    rss_feeds = [
+        "https://feeds.finance.yahoo.com/rss/2.0/headline?s=EURUSD=X&region=US&lang=en-US",
+        "https://www.forexlive.com/feed/news",
+        "https://www.dailyfx.com/feeds/all",
+        "https://feeds.bbci.co.uk/news/business/rss.xml",
+    ]
+
+    import xml.etree.ElementTree as ET
+    for feed_url in rss_feeds[:3]:
+        try:
+            resp = requests.get(feed_url, timeout=5,
+                                headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code != 200:
+                continue
+            root = ET.fromstring(resp.content)
+            items = root.findall(".//item")[:10]
+            for item in items:
+                title = item.findtext("title", "")
+                desc  = item.findtext("description", "")
+                pub   = item.findtext("pubDate", "")
+                link  = item.findtext("link", "")
+                text  = (title + " " + desc).lower()
+
+                # Lọc tin liên quan đến cặp tiền
+                relevant = any(kw.lower() in text for kw in keywords)
+                if not relevant and "forex" not in feed_url:
+                    continue
+
+                # Tính sentiment score
+                bull = sum(1 for w in BULLISH_WORDS if w in text)
+                bear = sum(1 for w in BEARISH_WORDS if w in text)
+                if bull > bear:
+                    sentiment = "bullish"
+                    sent_score = min(bull - bear, 5)
+                elif bear > bull:
+                    sentiment = "bearish"
+                    sent_score = -min(bear - bull, 5)
+                else:
+                    sentiment = "neutral"
+                    sent_score = 0
+
+                news_items.append({
+                    "title":     title[:100],
+                    "sentiment": sentiment,
+                    "score":     sent_score,
+                    "time":      pub[:25] if pub else "",
+                    "link":      link,
+                })
+        except Exception:
+            continue
+
+    # Sắp xếp theo sentiment mạnh nhất
+    news_items.sort(key=lambda x: abs(x["score"]), reverse=True)
+    return news_items[:8]
+
+
+def analyze_news_sentiment(news_items: list) -> dict:
+    """Tổng hợp sentiment từ danh sách tin tức."""
+    if not news_items:
+        return {"action": "NEUTRAL", "score": 0, "confidence": 0,
+                "bull_count": 0, "bear_count": 0, "neutral_count": 0}
+
+    total_score = sum(n["score"] for n in news_items)
+    bull_count  = sum(1 for n in news_items if n["sentiment"] == "bullish")
+    bear_count  = sum(1 for n in news_items if n["sentiment"] == "bearish")
+    neut_count  = sum(1 for n in news_items if n["sentiment"] == "neutral")
+    total       = len(news_items)
+
+    # Tín hiệu từ tin tức
+    if total_score >= 3:
+        action = "BUY"
+    elif total_score <= -3:
+        action = "SELL"
+    else:
+        action = "NEUTRAL"
+
+    confidence = min(85, int(abs(total_score) / (total * 2) * 100) + 30) if total > 0 else 0
+
+    return {
+        "action":       action,
+        "score":        total_score,
+        "confidence":   confidence,
+        "bull_count":   bull_count,
+        "bear_count":   bear_count,
+        "neutral_count": neut_count,
+    }
+
+
+# ════════════════════════════════════════════════════════
 #  TÍNH TÍN HIỆU
 # ════════════════════════════════════════════════════════
 
@@ -576,7 +716,9 @@ def compute_signal_short(df: pd.DataFrame) -> dict:
 
     score = int(score)
     action = "BUY" if score >= 4 else "SELL" if score <= -4 else "NEUTRAL"
-    return _make_signal_result(action, score, 8, 1.5, 0.75, last, signals, rsi, sk)
+    result = _make_signal_result(action, score, 8, 1.5, 0.75, last, signals, rsi, sk)
+    result["news_score"] = 0  # sẽ được cập nhật ngoài
+    return result
 
 
 def compute_signal_long(df: pd.DataFrame) -> dict:
@@ -980,6 +1122,25 @@ def main():
 
         sig_short = compute_signal_short(df)
         sig_long  = compute_signal_long(df)
+
+        # Fetch tin tức + sentiment
+        news_items  = fetch_forex_news(pair)
+        news_sent   = analyze_news_sentiment(news_items)
+
+        # Tích hợp news sentiment vào tín hiệu ngắn hạn
+        news_boost = news_sent["score"]
+        combined_score = sig_short["score"] + news_boost
+        if combined_score >= 4:
+            sig_short["action"] = "BUY"
+        elif combined_score <= -4:
+            sig_short["action"] = "SELL"
+        else:
+            sig_short["action"] = "NEUTRAL"
+        sig_short["news_score"] = news_boost
+        sig_short["combined_score"] = combined_score
+        sig_short["confidence"] = min(95, sig_short["confidence"] +
+                                      (5 if news_sent["action"] == sig_short["action"] else 0))
+
         sig = sig_short  # dùng cho âm thanh/telegram
         last = df.iloc[-1]
         prev = df.iloc[-2]
@@ -1090,6 +1251,66 @@ def main():
                           </div>
                         </div>
                         """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── News Sentiment Section ──
+        st.markdown("**📰 Tin tức & Sentiment thị trường**")
+        ns_col1, ns_col2, ns_col3, ns_col4 = st.columns(4)
+        sent_color = "#2e7d32" if news_sent["action"]=="BUY" else "#c62828" if news_sent["action"]=="SELL" else "#e65100"
+        sent_emoji = "📈" if news_sent["action"]=="BUY" else "📉" if news_sent["action"]=="SELL" else "⏸"
+        ns_col1.metric("📰 Tin tức", f"{len(news_items)} bài")
+        ns_col2.metric("📈 Tích cực", news_sent["bull_count"])
+        ns_col3.metric("📉 Tiêu cực", news_sent["bear_count"])
+        ns_col4.metric("⏸ Trung tính", news_sent["neutral_count"])
+
+        # Thanh sentiment tổng hợp
+        sent_bg  = "linear-gradient(135deg,#e8f5e9,#f1f8e9)" if news_sent["action"]=="BUY" else                    "linear-gradient(135deg,#ffebee,#fce4ec)" if news_sent["action"]=="SELL" else                    "linear-gradient(135deg,#fff8e1,#fffde7)"
+        sent_border = "#43a047" if news_sent["action"]=="BUY" else                       "#e53935" if news_sent["action"]=="SELL" else "#f9a825"
+        st.markdown(f"""
+        <div style="background:{sent_bg};border:2px solid {sent_border};border-radius:12px;
+                    padding:14px 18px;margin:8px 0;display:flex;
+                    justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:11px;color:#5a7a9a;font-family:monospace;
+                        letter-spacing:1.5px;text-transform:uppercase">
+              📰 Sentiment từ tin tức
+            </div>
+            <div style="font-size:22px;font-weight:800;color:{sent_color}">
+              {sent_emoji} {news_sent["action"]} · {news_sent["confidence"]}% tin cậy
+            </div>
+            <div style="font-size:11px;color:#5a7a9a;margin-top:2px">
+              Tín hiệu kỹ thuật {sig_short["score"]:+d} + Tin tức {news_boost:+d}
+              = Tổng hợp <b style="color:{sent_color}">{combined_score:+d}</b>
+            </div>
+          </div>
+          <div style="text-align:right;font-family:monospace;font-size:28px">
+            {"🟢" if news_sent["action"]=="BUY" else "🔴" if news_sent["action"]=="SELL" else "🟡"}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Danh sách tin tức
+        if news_items:
+            with st.expander("📋 Xem chi tiết tin tức"):
+                for n in news_items:
+                    ic = "🟢" if n["sentiment"]=="bullish" else "🔴" if n["sentiment"]=="bearish" else "⚪"
+                    bg = "#f1f8f1" if n["sentiment"]=="bullish" else "#fff5f5" if n["sentiment"]=="bearish" else "#fffdf0"
+                    bd = "#43a047" if n["sentiment"]=="bullish" else "#e53935" if n["sentiment"]=="bearish" else "#f9a825"
+                    st.markdown(f"""
+                    <div style="background:{bg};border-left:3px solid {bd};
+                                border-radius:8px;padding:10px 14px;margin-bottom:6px">
+                      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                        <span style="font-size:13px;font-weight:600;color:#1a2332;flex:1">{ic} {n["title"]}</span>
+                        <span style="font-size:10px;color:#5a7a9a;margin-left:8px;white-space:nowrap">{n["time"][:16]}</span>
+                      </div>
+                      <div style="font-size:11px;color:#5a7a9a;margin-top:4px">
+                        Sentiment: <b>{n["sentiment"].upper()}</b> · Score: {n["score"]:+d}
+                      </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.info("Chưa tải được tin tức. Thử lại sau.")
 
         st.markdown("---")
 
