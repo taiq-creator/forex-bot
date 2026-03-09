@@ -1174,40 +1174,40 @@ def main():
         </div>""", unsafe_allow_html=True)
 
         # ─── SIGNAL CARDS ───
-        def _sig(s, title, icon):
-            a = s["action"]
-            ac = a.lower() if a != "NEUTRAL" else "neut"
-            em = "📈" if a=="BUY" else "📉" if a=="SELL" else "⏸"
-            lbl= "MUA" if a=="BUY" else "BÁN" if a=="SELL" else "TRUNG TÍNH"
-            rr = abs(s["tp"]-s["entry"]) / max(abs(s["sl"]-s["entry"]),1e-10)
-            return f"""
-            <div class="fx-sig {ac}">
-              <div class="fx-sig-lbl">{icon} {title}</div>
-              <div class="fx-sig-act {ac}">{em} {lbl}</div>
-              <div class="fx-sig-conf {ac}">{s["confidence"]}% · {s["score"]:+d}pt</div>
-              <div class="fx-tpsl">
-                <div class="fx-tpsl-item tp">
-                  <div class="fx-tpsl-lbl">TP</div>
-                  <div class="fx-tpsl-val">{fmt(s["tp"])}</div>
-                </div>
-                <div class="fx-tpsl-item entry">
-                  <div class="fx-tpsl-lbl">Entry</div>
-                  <div class="fx-tpsl-val">{fmt(s["entry"])}</div>
-                </div>
-                <div class="fx-tpsl-item sl">
-                  <div class="fx-tpsl-lbl">SL</div>
-                  <div class="fx-tpsl-val">{fmt(s["sl"])}</div>
-                </div>
-              </div>
-              <div style="font-size:8px;color:#1e3a5f;margin-top:4px;font-family:JetBrains Mono,monospace;text-align:right">R/R 1:{rr:.1f}</div>
-            </div>"""
+        def _sig_html(s, title, icon):
+            a   = s["action"]
+            ac  = a.lower() if a != "NEUTRAL" else "neut"
+            em  = "📈" if a == "BUY" else "📉" if a == "SELL" else "⏸"
+            lbl = "MUA" if a == "BUY" else "BÁN" if a == "SELL" else "TRUNG TÍNH"
+            rr  = abs(s["tp"] - s["entry"]) / max(abs(s["sl"] - s["entry"]), 1e-10)
+            conf= s["confidence"]
+            sc  = s["score"]
+            tp  = fmt(s["tp"])
+            en  = fmt(s["entry"])
+            sl  = fmt(s["sl"])
+            # Dùng % thay f-string để tránh conflict dấu {}
+            html = (
+                '<div class="fx-sig ' + ac + '">' +
+                '<div class="fx-sig-lbl">' + icon + ' ' + title + '</div>' +
+                '<div class="fx-sig-act ' + ac + '">' + em + ' ' + lbl + '</div>' +
+                '<div class="fx-sig-conf ' + ac + '">' + str(conf) + '% · ' + ('%+d' % sc) + 'pt</div>' +
+                '<div class="fx-tpsl">' +
+                  '<div class="fx-tpsl-item tp"><div class="fx-tpsl-lbl">TP</div><div class="fx-tpsl-val">' + tp + '</div></div>' +
+                  '<div class="fx-tpsl-item entry"><div class="fx-tpsl-lbl">Entry</div><div class="fx-tpsl-val">' + en + '</div></div>' +
+                  '<div class="fx-tpsl-item sl"><div class="fx-tpsl-lbl">SL</div><div class="fx-tpsl-val">' + sl + '</div></div>' +
+                '</div>' +
+                '<div style="font-size:8px;color:#1e3a5f;margin-top:4px;font-family:monospace;text-align:right">R/R 1:' + ('%.1f' % rr) + '</div>' +
+                '</div>'
+            )
+            return html
 
+        html_short = _sig_html(sig_s, "NGẮN HẠN", "⚡")
+        html_long  = _sig_html(sig_l, "DÀI HẠN", "📊")
         st.markdown('<div class="fx-sec">⚡ Tín hiệu giao dịch</div>', unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="fx-sig-row">
-          {_sig(sig_s,"NGẮN HẠN","⚡")}
-          {_sig(sig_l,"DÀI HẠN","📊")}
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            '<div class="fx-sig-row">' + html_short + html_long + '</div>',
+            unsafe_allow_html=True
+        )
 
         # ─── INDICATORS ───
         st.markdown('<div class="fx-sec">📊 Chỉ báo kỹ thuật</div>', unsafe_allow_html=True)
@@ -1215,15 +1215,17 @@ def main():
         def _cls(sig_str):
             return "bull" if "🟢" in sig_str else "bear" if "🔴" in sig_str else "neut"
         def _chip(name, val, sig_str):
-            c = _cls(sig_str)
-            em= "🟢" if c=="bull" else "🔴" if c=="bear" else "⚪"
-            return f"""<div class="fx-ind-chip {c}">
-              <div class="fx-ind-name">{name}</div>
-              <div class="fx-ind-right">
-                <div class="fx-ind-val">{val}</div>
-                <div class="fx-ind-sig">{em} {sig_str.split(" ",1)[-1][:18]}</div>
-              </div>
-            </div>"""
+            c  = _cls(sig_str)
+            em = "🟢" if c == "bull" else "🔴" if c == "bear" else "⚪"
+            short_sig = sig_str.split(" ", 1)[-1][:18]
+            return (
+                '<div class="fx-ind-chip ' + c + '">' +
+                '<div class="fx-ind-name">' + name + '</div>' +
+                '<div class="fx-ind-right">' +
+                '<div class="fx-ind-val">' + val + '</div>' +
+                '<div class="fx-ind-sig">' + em + ' ' + short_sig + '</div>' +
+                '</div></div>'
+            )
 
         rsi_s = sigs_dict.get("RSI",("⚪",""))[0]
         mac_s = sigs_dict.get("MACD",("⚪",""))[0]
@@ -1232,15 +1234,15 @@ def main():
         bb_s  = sigs_dict.get("Bollinger",("⚪",""))[0]
         stk_s = sigs_dict.get("Stochastic",("⚪",""))[0]
 
-        chips = (
-            _chip("RSI 14",  f"{sig_s['rsi']:.1f}", rsi_s) +
-            _chip("MACD",    f"{sig_s['macd']:.5f}", mac_s) +
-            _chip("EMA20/50",f"{fmt(float(last['EMA_20']))}", ema_s) +
-            _chip("EMA 200", f"{fmt(float(last['EMA_200']))}", e2s_s) +
-            _chip("Bollinger",f"↑{fmt(float(last['BB_upper']))}", bb_s) +
-            _chip("Stoch%K", f"{sig_s['stoch_k']:.1f}", stk_s)
+        chips_html = (
+            _chip("RSI 14",   "%.1f" % sig_s["rsi"],             rsi_s) +
+            _chip("MACD",     "%.5f" % sig_s["macd"],            mac_s) +
+            _chip("EMA20/50", fmt(float(last["EMA_20"])),        ema_s) +
+            _chip("EMA 200",  fmt(float(last["EMA_200"])),       e2s_s) +
+            _chip("Bollinger","B" + fmt(float(last["BB_upper"])),bb_s) +
+            _chip("Stoch%K",  "%.1f" % sig_s["stoch_k"],         stk_s)
         )
-        st.markdown(f'<div class="fx-ind-grid">{chips}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="fx-ind-grid">' + chips_html + '</div>', unsafe_allow_html=True)
 
         # ─── SENTIMENT ───
         st.markdown('<div class="fx-sec">📰 Sentiment tin tức</div>', unsafe_allow_html=True)
