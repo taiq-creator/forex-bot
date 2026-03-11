@@ -1494,23 +1494,22 @@ def main():
             st.warning("⚠️ Không đủ dữ liệu.")
             return
 
-        sig_s = compute_signal_short(df)
-        sig_l = compute_signal_long(df)
-        news  = fetch_forex_news(pair)
-        sent  = analyze_news_sentiment(news)
-
-        nb    = sent["score"]
-        csc   = sig_s["score"] + nb
-        sig_s["action"]     = "BUY" if csc>=4 else "SELL" if csc<=-4 else "NEUTRAL"
-        sig_s["confidence"] = min(95, sig_s["confidence"] + (5 if sent["action"]==sig_s["action"] else 0))
-        sig   = sig_s
-
         last  = df.iloc[-1]
         prev  = df.iloc[-2]
-        # Giá realtime được hiển thị qua WS component (iframe)
-        # Ở đây chỉ dùng Close để tính signal & OHLC bar
         price = float(last["Close"])
         chg   = (price - float(prev["Close"])) / float(prev["Close"]) * 100
+
+        # Tín hiệu cho đúng khung giờ đang chọn
+        sig = compute_signal(df)
+
+        # Tin tức để hiển thị
+        news = fetch_forex_news(pair)
+        sent = analyze_news_sentiment(news)
+        nb   = sent["score"]
+        csc  = sig["score"] + nb
+        final_action = "BUY" if csc>=4 else "SELL" if csc<=-4 else "NEUTRAL"
+        sig["action"]     = final_action
+        sig["confidence"] = min(95, sig["confidence"] + (5 if sent["action"]==final_action else 0))
 
         # âm thanh & telegram
         prev_act = st.session_state.get("prev_action","")
@@ -1541,39 +1540,50 @@ def main():
             unsafe_allow_html=True
         )
 
-        # ─── SIGNAL CARDS ───
-        def _sig_html(s, title, icon):
-            a   = s["action"]
-            ac  = a.lower() if a != "NEUTRAL" else "neut"
-            em  = "📈" if a == "BUY" else "📉" if a == "SELL" else "⏸"
-            lbl = "MUA" if a == "BUY" else "BÁN" if a == "SELL" else "TRUNG TÍNH"
-            rr  = abs(s["tp"] - s["entry"]) / max(abs(s["sl"] - s["entry"]), 1e-10)
-            conf= s["confidence"]
-            sc  = s["score"]
-            tp  = fmt(s["tp"])
-            en  = fmt(s["entry"])
-            sl  = fmt(s["sl"])
-            # Dùng % thay f-string để tránh conflict dấu {}
-            html = (
-                '<div class="fx-sig ' + ac + '">' +
-                '<div class="fx-sig-lbl">' + icon + ' ' + title + '</div>' +
-                '<div class="fx-sig-act ' + ac + '">' + em + ' ' + lbl + '</div>' +
-                '<div class="fx-sig-conf ' + ac + '">' + str(conf) + '% · ' + ('%+d' % sc) + 'pt</div>' +
-                '<div class="fx-tpsl">' +
-                  '<div class="fx-tpsl-item tp"><div class="fx-tpsl-lbl">TP</div><div class="fx-tpsl-val">' + tp + '</div></div>' +
-                  '<div class="fx-tpsl-item entry"><div class="fx-tpsl-lbl">Entry</div><div class="fx-tpsl-val">' + en + '</div></div>' +
-                  '<div class="fx-tpsl-item sl"><div class="fx-tpsl-lbl">SL</div><div class="fx-tpsl-val">' + sl + '</div></div>' +
-                '</div>' +
-                '<div style="font-size:8px;color:#1e3a5f;margin-top:4px;font-family:monospace;text-align:right">R/R 1:' + ('%.1f' % rr) + '</div>' +
-                '</div>'
-            )
-            return html
+        # ─── SIGNAL CARD — khung giờ đang chọn ───
+        a    = sig["action"]
+        ac   = a.lower() if a != "NEUTRAL" else "neut"
+        em   = "📈" if a=="BUY" else "📉" if a=="SELL" else "⏸"
+        lbl  = "MUA" if a=="BUY" else "BÁN" if a=="SELL" else "TRUNG TÍNH"
+        conf = sig["confidence"]
+        sc   = sig["score"]
+        tp   = fmt(sig["tp"])
+        en_  = fmt(sig["entry"])
+        sl   = fmt(sig["sl"])
+        rr   = abs(sig["tp"]-sig["entry"]) / max(abs(sig["sl"]-sig["entry"]),1e-10)
+        col_buy  = "#4ade80"; col_sell = "#f87171"; col_neut = "#fbbf24"
+        col  = col_buy if a=="BUY" else col_sell if a=="SELL" else col_neut
+        bg   = "#031a0e" if a=="BUY" else "#1a0303" if a=="SELL" else "#161106"
+        bord = "#16a34a" if a=="BUY" else "#dc2626" if a=="SELL" else "#b45309"
 
-        html_short = _sig_html(sig_s, "NGẮN HẠN", "⚡")
-        html_long  = _sig_html(sig_l, "DÀI HẠN", "📊")
-        st.markdown('<div class="fx-sec">⚡ Tín hiệu giao dịch</div>', unsafe_allow_html=True)
+        st.markdown('<div class="fx-sec">⚡ Tín hiệu · ' + pair + ' ' + tf_short + '</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="fx-sig-row">' + html_short + html_long + '</div>',
+            '<div style="margin:0 6px 4px;background:' + bg + ';border:1px solid ' + bord + ';border-radius:12px;padding:14px">' +
+            # Dòng 1: action lớn + confidence
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+            '<div>' +
+            '<div style="font-size:9px;color:#475569;font-family:monospace;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">' + tf_short + ' · ' + pair + '</div>' +
+            '<div style="font-size:28px;font-weight:800;color:' + col + ';line-height:1;font-family:JetBrains Mono,monospace">' + em + ' ' + lbl + '</div>' +
+            '<div style="font-size:11px;color:' + col + ';opacity:.8;margin-top:3px;font-family:monospace">' + str(conf) + '% tin cậy · ' + ('%+d' % sc) + 'pt · R/R 1:' + ('%.1f' % rr) + '</div>' +
+            '</div>' +
+            '<div style="font-size:42px;opacity:.15">' + em + '</div>' +
+            '</div>' +
+            # Dòng 2: TP / Entry / SL
+            '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">' +
+            '<div style="background:rgba(22,163,74,.12);border:1px solid rgba(22,163,74,.2);border-radius:7px;padding:7px;text-align:center">' +
+            '<div style="font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Take Profit</div>' +
+            '<div style="font-family:monospace;font-size:13px;font-weight:700;color:#4ade80;margin-top:2px">' + tp + '</div>' +
+            '</div>' +
+            '<div style="background:rgba(30,58,138,.2);border:1px solid rgba(59,130,246,.15);border-radius:7px;padding:7px;text-align:center">' +
+            '<div style="font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Entry</div>' +
+            '<div style="font-family:monospace;font-size:13px;font-weight:700;color:#93c5fd;margin-top:2px">' + en_ + '</div>' +
+            '</div>' +
+            '<div style="background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.2);border-radius:7px;padding:7px;text-align:center">' +
+            '<div style="font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Stop Loss</div>' +
+            '<div style="font-family:monospace;font-size:13px;font-weight:700;color:#f87171;margin-top:2px">' + sl + '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>',
             unsafe_allow_html=True
         )
 
@@ -1663,7 +1673,7 @@ def main():
             <div>
               <div class="fx-sent-title">Sentiment tổng hợp</div>
               <div class="fx-sent-act" style="color:{sc}">{sem} {slbl} · {sent["confidence"]}%</div>
-              <div class="fx-sent-sub">KT {sig_s["score"]:+d} + News {nb:+d} = <b style="color:{sc}">{csc:+d}</b></div>
+              <div class="fx-sent-sub">KT +0 + News · Tổng hợp</div>
             </div>
             <div style="font-size:28px">{sem}</div>
           </div>
