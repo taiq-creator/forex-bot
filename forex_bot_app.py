@@ -267,6 +267,65 @@ div[data-testid="stDataFrame"] { padding: 0 6px !important; }
 .fx-news-tag.bear { background: #1a0303; color: #f87171; }
 .fx-news-tag.neut { background: #161106; color: #fbbf24; }
 
+/* ══ MULTI-TIMEFRAME TABLE ══ */
+.mtf-wrap {
+  margin: 0 6px;
+  background: #0a0e1a;
+  border: 1px solid #0f1e35;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mtf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'JetBrains Mono', monospace;
+}
+.mtf-table th {
+  background: #0c1121;
+  color: #334155;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 7px 6px;
+  text-align: center;
+  border-bottom: 1px solid #0f1e35;
+  border-right: 1px solid #0f1e35;
+  white-space: nowrap;
+}
+.mtf-table th:first-child { text-align: left; padding-left: 10px; }
+.mtf-table td {
+  padding: 6px 4px;
+  text-align: center;
+  border-bottom: 1px solid #080d16;
+  border-right: 1px solid #080d16;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mtf-table td:first-child {
+  text-align: left;
+  padding-left: 10px;
+  color: #475569;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #0c1121;
+  border-right: 1px solid #0f1e35;
+}
+.mtf-table tr:last-child td { border-bottom: none; }
+.mtf-table .c-buy     { background: #031a0e; color: #4ade80; }
+.mtf-table .c-sell    { background: #1a0303; color: #f87171; }
+.mtf-table .c-neutral { background: #0f1000; color: #ca8a04; }
+.mtf-table .c-na      { background: #0c1121; color: #1e3a5f; }
+.mtf-table .c-sum-buy  { background: #052e16; color: #4ade80; font-size: 12px; }
+.mtf-table .c-sum-sell { background: #2d0a0a; color: #f87171; font-size: 12px; }
+.mtf-table .c-sum-neut { background: #1c1400; color: #fbbf24; font-size: 12px; }
+.mtf-table .tf-header-buy  { color: #4ade80 !important; border-bottom: 2px solid #16a34a !important; }
+.mtf-table .tf-header-sell { color: #f87171 !important; border-bottom: 2px solid #dc2626 !important; }
+.mtf-table .tf-header-neut { color: #fbbf24 !important; border-bottom: 2px solid #b45309 !important; }
+
 /* AI box */
 .fx-ai-box {
   margin: 0 6px;
@@ -338,12 +397,126 @@ WS_SYMBOLS = {
 
 # interval: (twelve_data_interval, yf_interval, yf_period, outputsize)
 TIMEFRAMES = {
+    "M5 (5 phút)":   ("5min",  "5m",   "2d",   200),
     "M15 (15 phút)": ("15min", "15m",  "5d",   200),
+    "M30 (30 phút)": ("30min", "30m",  "7d",   200),
     "H1 (1 giờ)":    ("1h",   "1h",   "10d",  200),
     "H4 (4 giờ)":    ("4h",   "1h",   "30d",  200),
     "D1 (Ngày)":     ("1day", "1d",   "180d", 200),
-    "W1 (Tuần)":     ("1week","1wk",  "730d", 100),
 }
+
+# Multi-Timeframe: (yf_interval, yf_period, label_short)
+MTF_LIST = [
+    ("5m",  "2d",   "5M"),
+    ("15m", "5d",   "15M"),
+    ("30m", "7d",   "30M"),
+    ("1h",  "10d",  "1H"),
+    ("1h",  "30d",  "4H"),   # resample từ 1h
+    ("1d",  "180d", "1D"),
+]
+
+@st.cache_data(ttl=15)
+def fetch_mtf_signals(yf_ticker: str) -> list:
+    """
+    Tính tín hiệu BUY/SELL/NEUTRAL cho 6 khung giờ cùng lúc.
+    Trả về list dict: [{tf, action, score, indicators}, ...]
+    """
+    results = []
+    for yf_int, yf_period, tf_label in MTF_LIST:
+        try:
+            df = yf.download(yf_ticker, interval=yf_int, period=yf_period,
+                             progress=False, auto_adjust=True)
+            if df.empty or len(df) < 30:
+                results.append({"tf": tf_label, "action": "N/A", "score": 0,
+                                 "indicators": {}, "error": True})
+                continue
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+            df = df[["Open","High","Low","Close","Volume"]].dropna()
+
+            # Resample 4H từ 1H
+            if tf_label == "4H":
+                df = df.resample("4h").agg({
+                    "Open":"first","High":"max","Low":"min",
+                    "Close":"last","Volume":"sum"
+                }).dropna()
+
+            if len(df) < 30:
+                results.append({"tf": tf_label, "action": "N/A", "score": 0,
+                                 "indicators": {}, "error": True})
+                continue
+
+            df = add_indicators(df)
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+
+            # Tính từng chỉ báo
+            inds = {}
+
+            # RSI
+            rsi = float(last["RSI"])
+            if rsi < 30:   inds["RSI"] = ("BUY",  "%.1f" % rsi)
+            elif rsi > 70: inds["RSI"] = ("SELL", "%.1f" % rsi)
+            else:          inds["RSI"] = ("NEUTRAL", "%.1f" % rsi)
+
+            # MACD
+            if last["MACD"] > last["MACD_signal"] and prev["MACD"] <= prev["MACD_signal"]:
+                inds["MACD"] = ("BUY", "Cross↑")
+            elif last["MACD"] < last["MACD_signal"] and prev["MACD"] >= prev["MACD_signal"]:
+                inds["MACD"] = ("SELL", "Cross↓")
+            elif last["MACD"] > last["MACD_signal"]:
+                inds["MACD"] = ("BUY", ">Sig")
+            else:
+                inds["MACD"] = ("SELL", "<Sig")
+
+            # EMA 20/50
+            if last["EMA_20"] > last["EMA_50"]:
+                inds["EMA"] = ("BUY", "20>50")
+            else:
+                inds["EMA"] = ("SELL", "20<50")
+
+            # EMA 200
+            c = float(last["Close"])
+            if c > last["EMA_200"]:
+                inds["EMA200"] = ("BUY", ">200")
+            else:
+                inds["EMA200"] = ("SELL", "<200")
+
+            # Bollinger
+            if c < float(last["BB_lower"]):
+                inds["BB"] = ("BUY", "↓Band")
+            elif c > float(last["BB_upper"]):
+                inds["BB"] = ("SELL", "↑Band")
+            else:
+                inds["BB"] = ("NEUTRAL", "Mid")
+
+            # Stochastic
+            sk = float(last["Stoch_K"])
+            sd = float(last["Stoch_D"])
+            if sk < 20:   inds["Stoch"] = ("BUY",  "%.0f" % sk)
+            elif sk > 80: inds["Stoch"] = ("SELL", "%.0f" % sk)
+            else:         inds["Stoch"] = ("NEUTRAL", "%.0f" % sk)
+
+            # Tổng điểm
+            score = 0
+            score_map = {"BUY": 1, "SELL": -1, "NEUTRAL": 0}
+            for v in inds.values():
+                score += score_map.get(v[0], 0)
+
+            if score >= 3:    action = "BUY"
+            elif score <= -3: action = "SELL"
+            else:             action = "NEUTRAL"
+
+            results.append({
+                "tf": tf_label, "action": action,
+                "score": score, "indicators": inds,
+                "error": False,
+                "rsi": rsi, "close": c,
+            })
+        except Exception as e:
+            results.append({"tf": tf_label, "action": "N/A", "score": 0,
+                             "indicators": {}, "error": True})
+    return results
+
 
 @st.cache_data(ttl=10)
 def fetch_ohlcv_yahoo(yf_ticker: str, yf_interval: str, yf_period: str) -> pd.DataFrame:
@@ -1404,40 +1577,77 @@ def main():
             unsafe_allow_html=True
         )
 
-        # ─── INDICATORS ───
-        st.markdown('<div class="fx-sec">📊 Chỉ báo kỹ thuật</div>', unsafe_allow_html=True)
-        sigs_dict = sig_s["signals"]
-        def _cls(sig_str):
-            return "bull" if "🟢" in sig_str else "bear" if "🔴" in sig_str else "neut"
-        def _chip(name, val, sig_str):
-            c  = _cls(sig_str)
-            em = "🟢" if c == "bull" else "🔴" if c == "bear" else "⚪"
-            short_sig = sig_str.split(" ", 1)[-1][:18]
-            return (
-                '<div class="fx-ind-chip ' + c + '">' +
-                '<div class="fx-ind-name">' + name + '</div>' +
-                '<div class="fx-ind-right">' +
-                '<div class="fx-ind-val">' + val + '</div>' +
-                '<div class="fx-ind-sig">' + em + ' ' + short_sig + '</div>' +
-                '</div></div>'
-            )
+        # ─── MULTI-TIMEFRAME SIGNALS TABLE ───
+        st.markdown('<div class="fx-sec">📊 Phân tích đa khung giờ</div>', unsafe_allow_html=True)
 
-        rsi_s = sigs_dict.get("RSI",("⚪",""))[0]
-        mac_s = sigs_dict.get("MACD",("⚪",""))[0]
-        ema_s = sigs_dict.get("EMA 20/50",("⚪",""))[0]
-        e2s_s = sigs_dict.get("EMA 200",("⚪",""))[0]
-        bb_s  = sigs_dict.get("Bollinger",("⚪",""))[0]
-        stk_s = sigs_dict.get("Stochastic",("⚪",""))[0]
+        _, yf_ticker, _ = PAIRS[pair]
+        mtf_data = fetch_mtf_signals(yf_ticker)
 
-        chips_html = (
-            _chip("RSI 14",   "%.1f" % sig_s["rsi"],             rsi_s) +
-            _chip("MACD",     "%.5f" % sig_s["macd"],            mac_s) +
-            _chip("EMA20/50", fmt(float(last["EMA_20"])),        ema_s) +
-            _chip("EMA 200",  fmt(float(last["EMA_200"])),       e2s_s) +
-            _chip("Bollinger","B" + fmt(float(last["BB_upper"])),bb_s) +
-            _chip("Stoch%K",  "%.1f" % sig_s["stoch_k"],         stk_s)
+        IND_ROWS = [
+            ("RSI",   "RSI 14"),
+            ("MACD",  "MACD"),
+            ("EMA",   "EMA 20/50"),
+            ("EMA200","EMA 200"),
+            ("BB",    "Bollinger"),
+            ("Stoch", "Stoch %K"),
+        ]
+
+        def _cell(action, val=""):
+            if action == "BUY":
+                return '<td class="c-buy">▲' + val + '</td>'
+            elif action == "SELL":
+                return '<td class="c-sell">▼' + val + '</td>'
+            elif action == "N/A":
+                return '<td class="c-na">—</td>'
+            else:
+                return '<td class="c-neutral">–' + val + '</td>'
+
+        def _sum_class(action):
+            if action == "BUY":    return "c-sum-buy"
+            elif action == "SELL": return "c-sum-sell"
+            else:                  return "c-sum-neut"
+
+        def _th_class(action):
+            if action == "BUY":    return "tf-header-buy"
+            elif action == "SELL": return "tf-header-sell"
+            else:                  return "tf-header-neut"
+
+        # Header row — tên khung giờ
+        thead = '<thead><tr><th>Chỉ báo</th>'
+        for m in mtf_data:
+            th_cls = _th_class(m["action"])
+            thead += '<th class="' + th_cls + '">' + m["tf"] + '</th>'
+        thead += '</tr></thead>'
+
+        # Body — mỗi hàng 1 chỉ báo
+        tbody = '<tbody>'
+        for ind_key, ind_label in IND_ROWS:
+            tbody += '<tr><td>' + ind_label + '</td>'
+            for m in mtf_data:
+                if m.get("error") or ind_key not in m["indicators"]:
+                    tbody += '<td class="c-na">—</td>'
+                else:
+                    act, val = m["indicators"][ind_key]
+                    tbody += _cell(act, " " + val)
+            tbody += '</tr>'
+
+        # Summary row — tổng hợp tín hiệu
+        tbody += '<tr><td style="color:#e2e8f0;font-weight:700">TỔNG HỢP</td>'
+        for m in mtf_data:
+            sc   = m["score"]
+            act  = m["action"]
+            sc_cls = _sum_class(act)
+            em   = "▲" if act == "BUY" else "▼" if act == "SELL" else "–"
+            lbl  = "MUA" if act == "BUY" else "BÁN" if act == "SELL" else "NGANG" if act == "NEUTRAL" else "N/A"
+            tbody += '<td class="' + sc_cls + '">' + em + ' ' + lbl + '</td>'
+        tbody += '</tr></tbody>'
+
+        mtf_html = (
+            '<div class="mtf-wrap">' +
+            '<table class="mtf-table">' + thead + tbody + '</table>' +
+            '</div>'
         )
-        st.markdown('<div class="fx-ind-grid">' + chips_html + '</div>', unsafe_allow_html=True)
+        st.markdown(mtf_html, unsafe_allow_html=True)
 
         # ─── SENTIMENT ───
         st.markdown('<div class="fx-sec">📰 Sentiment tin tức</div>', unsafe_allow_html=True)
