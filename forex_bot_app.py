@@ -464,22 +464,22 @@ def fetch_mtf_signals(yf_ticker: str) -> list:
             elif last["MACD"] < last["MACD_signal"] and prev["MACD"] >= prev["MACD_signal"]:
                 inds["MACD"] = ("SELL", "Cross↓")
             elif last["MACD"] > last["MACD_signal"]:
-                inds["MACD"] = ("BUY", ">Sig")
+                inds["MACD"] = ("BUY", "↑Sig")
             else:
-                inds["MACD"] = ("SELL", "<Sig")
+                inds["MACD"] = ("SELL", "↓Sig")
 
             # EMA 20/50
             if last["EMA_20"] > last["EMA_50"]:
-                inds["EMA"] = ("BUY", "20>50")
+                inds["EMA"] = ("BUY", "20↑50")
             else:
-                inds["EMA"] = ("SELL", "20<50")
+                inds["EMA"] = ("SELL", "20↓50")
 
             # EMA 200
             c = float(last["Close"])
             if c > last["EMA_200"]:
-                inds["EMA200"] = ("BUY", ">200")
+                inds["EMA200"] = ("BUY", "↑200")
             else:
-                inds["EMA200"] = ("SELL", "<200")
+                inds["EMA200"] = ("SELL", "↓200")
 
             # Bollinger
             if c < float(last["BB_lower"]):
@@ -1593,14 +1593,16 @@ def main():
         ]
 
         def _cell(action, val=""):
+            import html as _html
+            safe_val = _html.escape(str(val))
             if action == "BUY":
-                return '<td class="c-buy">▲' + val + '</td>'
+                return '<td class="c-buy">▲' + safe_val + '</td>'
             elif action == "SELL":
-                return '<td class="c-sell">▼' + val + '</td>'
+                return '<td class="c-sell">▼' + safe_val + '</td>'
             elif action == "N/A":
                 return '<td class="c-na">—</td>'
             else:
-                return '<td class="c-neutral">–' + val + '</td>'
+                return '<td class="c-neutral">–' + safe_val + '</td>'
 
         def _sum_class(action):
             if action == "BUY":    return "c-sum-buy"
