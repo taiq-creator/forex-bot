@@ -20,6 +20,7 @@ CẤU HÌNH API (tùy chọn):
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -48,6 +49,7 @@ GROQ_API_KEY        = _get_secret("GROQ_API_KEY")
 TWELVE_DATA_API_KEY = _get_secret("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN  = _get_secret("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID    = _get_secret("TELEGRAM_CHAT_ID")
+FINAGE_API_KEY      = _get_secret("FINAGE_API_KEY")   # optional — finage.co free tier
 
 # ── Cấu hình trang ───────────────────────────────────────
 st.set_page_config(
@@ -307,6 +309,33 @@ PAIRS = {
     "Ξ  Ethereum (ETH/USD)": ("ETH/USD", "ETH-USD", "crypto"),
 }
 
+# ── WebSocket symbol mapping ──
+# Binance WS: wss://stream.binance.com:9443/ws/<symbol>@trade
+# Finage  WS: wss://forex.finage.co.uk:8443/forex?apikey=<key>
+WS_SYMBOLS = {
+    # Crypto → Binance WS (free, no key)
+    "₿  Bitcoin (BTC/USD)":   ("binance", "btcusdt"),
+    "Ξ  Ethereum (ETH/USD)":  ("binance", "ethusdt"),
+    # Forex → Finage WS (free key needed) hoặc polling fallback
+    "🇪🇺 EUR/USD": ("finage", "EUR/USD"),
+    "🇬🇧 GBP/USD": ("finage", "GBP/USD"),
+    "🇯🇵 USD/JPY": ("finage", "USD/JPY"),
+    "🇦🇺 AUD/USD": ("finage", "AUD/USD"),
+    "🇨🇭 USD/CHF": ("finage", "USD/CHF"),
+    "🇨🇦 USD/CAD": ("finage", "USD/CAD"),
+    "🇳🇿 NZD/USD": ("finage", "NZD/USD"),
+    "🇪🇺 EUR/GBP": ("finage", "EUR/GBP"),
+    "🇪🇺 EUR/JPY": ("finage", "EUR/JPY"),
+    "🇬🇧 GBP/JPY": ("finage", "GBP/JPY"),
+    "🇦🇺 AUD/JPY": ("finage", "AUD/JPY"),
+    "🇪🇺 EUR/AUD": ("finage", "EUR/AUD"),
+    # Commodity → polling (không có WS free)
+    "🥇 Vàng (XAU/USD)":   ("finage", "XAU/USD"),
+    "🥈 Bạc (XAG/USD)":    ("finage", "XAG/USD"),
+    "🛢️ Dầu WTI (CL)":     ("poll", "WTI/USD"),
+    "🛢️ Dầu Brent (BZ)":   ("poll", "BRENT/USD"),
+}
+
 # interval: (twelve_data_interval, yf_interval, yf_period, outputsize)
 TIMEFRAMES = {
     "M15 (15 phút)": ("15min", "15m",  "5d",   200),
@@ -316,7 +345,7 @@ TIMEFRAMES = {
     "W1 (Tuần)":     ("1week","1wk",  "730d", 100),
 }
 
-@st.cache_data(ttl=20)
+@st.cache_data(ttl=10)
 def fetch_ohlcv_yahoo(yf_ticker: str, yf_interval: str, yf_period: str) -> pd.DataFrame:
     """Tải OHLCV từ Yahoo Finance — miễn phí, không giới hạn."""
     try:
@@ -330,10 +359,168 @@ def fetch_ohlcv_yahoo(yf_ticker: str, yf_interval: str, yf_period: str) -> pd.Da
         return pd.DataFrame()
 
 
+def get_ws_component(pair_name: str) -> str:
+    """
+    WebSocket price widget chạy trong iframe — không bị Streamlit rerun reset.
+    - Crypto  : Binance WSS  → tick < 50ms
+    - Forex   : Finage WSS   (nếu có key) HOẶC polling open.er-api 1s
+    - Hiển thị: giá lớn, flash xanh/đỏ, H/L/ticks/latency
+    """
+    ws_info  = WS_SYMBOLS.get(pair_name, ("poll", ""))
+    ws_type, ws_sym = ws_info
+    td_sym   = PAIRS.get(pair_name, ("",))[0]
+
+    finage_key = ""
+    try:    finage_key = st.secrets.get("FINAGE_API_KEY", "")
+    except: pass
+
+    if "JPY" in td_sym:    dec = 3
+    elif PAIRS.get(pair_name,("","","x"))[2] == "crypto": dec = 2
+    else: dec = 5
+
+    if ws_type == "binance":
+        ws_js = (
+            "var WS_URL='wss://stream.binance.com:9443/ws/" + ws_sym + "@trade';"
+            "function buildWS(){"
+            "  ws=new WebSocket(WS_URL);"
+            "  ws.onopen=function(){setStatus('live');};"
+            "  ws.onmessage=function(e){var d=JSON.parse(e.data);if(d.p)updatePrice(parseFloat(d.p));};"
+            "  ws.onerror=function(){setStatus('error');};"
+            "  ws.onclose=function(){setStatus('reconnect');setTimeout(buildWS,2000);};"
+            "}"
+            "buildWS();"
+            "setInterval(function(){if(ws&&ws.readyState===1)ws.send(JSON.stringify({method:'ping'}));},20000);"
+        )
+    elif ws_type == "finage" and finage_key:
+        ws_js = (
+            "var WS_URL='wss://forex.finage.co.uk:8443/forex?apikey=" + finage_key + "';"
+            "function buildWS(){"
+            "  ws=new WebSocket(WS_URL);"
+            "  ws.onopen=function(){ws.send(JSON.stringify({action:'subscribe',symbols:'" + ws_sym + "'}));setStatus('live');};"
+            "  ws.onmessage=function(e){var d=JSON.parse(e.data);if(d.a)updatePrice(parseFloat(d.a));};"
+            "  ws.onerror=function(){setStatus('error');};"
+            "  ws.onclose=function(){setStatus('reconnect');setTimeout(buildWS,3000);};"
+            "}"
+            "buildWS();"
+        )
+    else:
+        base, quote = (td_sym.split("/") + ["USD"])[:2]
+        ws_js = (
+            "function poll(){"
+            "  fetch('https://open.er-api.com/v6/latest/" + base + "')"
+            "  .then(function(r){return r.json();})"
+            "  .then(function(d){if(d.result==='success'&&d.rates&&d.rates['" + quote + "'])updatePrice(d.rates['" + quote + "']);}).catch(function(){setStatus('error');});"
+            "}"
+            "function buildWS(){poll();setInterval(poll,1000);}"
+            "buildWS();"
+        )
+
+    pair_label = (pair_name
+        .replace("🇪🇺","").replace("🇬🇧","").replace("🇯🇵","")
+        .replace("🇦🇺","").replace("🇨🇭","").replace("🇨🇦","")
+        .replace("🇳🇿","").replace("🥇","").replace("🥈","")
+        .replace("🛢️","").replace("₿ ","").replace("Ξ ","").strip()
+    )
+
+    src_label = "Binance WS" if ws_type=="binance" else ("Finage WS" if (ws_type=="finage" and finage_key) else "Polling 1s")
+
+    html = (
+        "<!DOCTYPE html><html><head>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<link href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sora:wght@600;700;800&display=swap' rel='stylesheet'>"
+        "<style>"
+        "*{margin:0;padding:0;box-sizing:border-box;}"
+        "body{background:#0a0e1a;font-family:'Sora',sans-serif;padding:10px 12px 8px;}"
+        ".top{display:flex;justify-content:space-between;align-items:flex-start;}"
+        ".left{}"
+        ".right{text-align:right;padding-top:2px;}"
+        "#pair-lbl{font-size:10px;color:#334155;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;}"
+        "#price{font-size:34px;font-weight:800;color:#f8fafc;letter-spacing:-1px;line-height:1;font-family:'JetBrains Mono',monospace;transition:color 0.12s;}"
+        "#price.up{color:#22c55e;}"
+        "#price.dn{color:#ef4444;}"
+        "#chg{font-size:13px;font-weight:600;color:#475569;margin-top:5px;font-family:'JetBrains Mono',monospace;}"
+        "#chg.up{color:#22c55e;}"
+        "#chg.dn{color:#ef4444;}"
+        ".ohlc-row{font-size:11px;color:#334155;font-family:'JetBrains Mono',monospace;margin-bottom:2px;}"
+        ".ohlc-row b{color:#64748b;}"
+        ".bottom{display:flex;align-items:center;gap:6px;margin-top:8px;border-top:1px solid #0f1e35;padding-top:6px;}"
+        "#ws-dot{width:6px;height:6px;border-radius:50%;background:#334155;flex-shrink:0;transition:background .3s;}"
+        "#ws-dot.live{background:#22c55e;box-shadow:0 0 5px #22c55e;animation:bl 1.2s infinite;}"
+        "#ws-dot.error{background:#ef4444;}"
+        "#ws-dot.rc{background:#f59e0b;}"
+        "@keyframes bl{0%,100%{opacity:1}50%{opacity:.4}}"
+        "#ws-lbl{font-size:9px;color:#334155;font-family:'JetBrains Mono',monospace;}"
+        "#ts{margin-left:auto;font-size:9px;color:#1e3a5f;font-family:'JetBrains Mono',monospace;}"
+        ".stats{display:flex;gap:12px;}"
+        ".stat-item{text-align:center;}"
+        ".stat-lbl{font-size:8px;color:#1e3a5f;text-transform:uppercase;letter-spacing:.3px;}"
+        ".stat-val{font-size:10px;color:#475569;font-family:'JetBrains Mono',monospace;font-weight:600;}"
+        "</style></head><body>"
+        "<div class='top'>"
+        "  <div class='left'>"
+        "    <div id='pair-lbl'>" + pair_label + "</div>"
+        "    <div id='price'>---</div>"
+        "    <div id='chg'>-- ---%</div>"
+        "  </div>"
+        "  <div class='right'>"
+        "    <div class='ohlc-row'><b>H</b> <span id='hv'>---</span></div>"
+        "    <div class='ohlc-row'><b>L</b> <span id='lv'>---</span></div>"
+        "    <div class='ohlc-row'><b>Ticks</b> <span id='tc'>0</span></div>"
+        "  </div>"
+        "</div>"
+        "<div class='bottom'>"
+        "  <div id='ws-dot'></div>"
+        "  <span id='ws-lbl'>Connecting... (" + src_label + ")</span>"
+        "  <span id='ts'>--:--:--.---</span>"
+        "</div>"
+        "<script>(function(){"
+        "var ws,op=null,lp=null,hi=null,lo=null,tc=0,DEC=" + str(dec) + ";"
+        "function fmt(p){return p.toLocaleString('en-US',{minimumFractionDigits:DEC,maximumFractionDigits:DEC});}"
+        "function updatePrice(p){"
+        "  if(op===null)op=p;"
+        "  if(hi===null||p>hi){hi=p;document.getElementById('hv').textContent=fmt(hi);}"
+        "  if(lo===null||p<lo){lo=p;document.getElementById('lv').textContent=fmt(lo);}"
+        "  tc++;document.getElementById('tc').textContent=tc;"
+        "  var el=document.getElementById('price');"
+        "  var ce=document.getElementById('chg');"
+        "  if(lp!==null){"
+        "    el.classList.remove('up','dn');"
+        "    void el.offsetWidth;"
+        "    el.classList.add(p>lp?'up':'dn');"
+        "    setTimeout(function(){el.classList.remove('up','dn');},180);"
+        "    var chg=(p-op)/op*100;"
+        "    var diff=p-op;"
+        "    ce.className=chg>=0?'up':'dn';"
+        "    ce.textContent=(chg>=0?'▲':'▼')+' '+Math.abs(diff).toFixed(DEC)+' ('+(chg>=0?'+':'')+chg.toFixed(3)+'%)';"
+        "  }"
+        "  el.textContent=fmt(p);"
+        "  var d=new Date();"
+        "  document.getElementById('ts').textContent=d.toLocaleTimeString('en-GB')+'.'+String(d.getMilliseconds()).padStart(3,'0');"
+        "  lp=p;"
+        "}"
+        "function setStatus(s){"
+        "  var d=document.getElementById('ws-dot'),l=document.getElementById('ws-lbl');"
+        "  d.className='';"
+        "  if(s==='live'){d.classList.add('live');l.textContent='● " + src_label + " LIVE';}"
+        "  else if(s==='error'){d.classList.add('error');l.textContent='Connection error';}"
+        "  else if(s==='reconnect'){d.classList.add('rc');l.textContent='Reconnecting...';}"
+        "}"
+        + ws_js +
+        "setInterval(function(){"
+        "  var d=new Date();"
+        "  document.getElementById('ts').textContent=d.toLocaleTimeString('en-GB')+'.'+String(d.getMilliseconds()).padStart(3,'0');"
+        "},100);"
+        "})();</script>"
+        "</body></html>"
+    )
+    return html
+
+@st.cache_data(ttl=1)   # cache 1 giây — gần realtime
 def fetch_realtime_price(pair_name: str) -> float | None:
     """
-    Lấy giá tức thì từ ExchangeRate-API — miễn phí, không cần key, cập nhật mỗi 3s.
+    Lấy giá tức thì từ ExchangeRate-API — miễn phí, không cần key.
     Hỗ trợ Forex + Kim loại. Crypto dùng Binance.
+    Cache 1s để không spam API nhưng vẫn gần realtime.
     """
     try:
         _, _, asset_type = PAIRS[pair_name]
@@ -370,7 +557,7 @@ def fetch_realtime_price(pair_name: str) -> float | None:
     return None
 
 
-@st.cache_data(ttl=60)   # cache 60 giây — tiết kiệm credits
+@st.cache_data(ttl=10)   # cache 10 giây
 def fetch_ohlcv_twelvedata(td_symbol: str, interval: str, outputsize: int) -> pd.DataFrame:
     """Tải dữ liệu từ Twelve Data API (~1 giây độ trễ)."""
     # Đọc key từ st.secrets (Streamlit Cloud) hoặc os.getenv (local)
@@ -535,7 +722,7 @@ PAIR_KEYWORDS = {
     "ETH": ["ethereum", "ETH", "crypto"],
 }
 
-@st.cache_data(ttl=300)  # cache 5 phút
+@st.cache_data(ttl=120)  # cache 2 phút
 def fetch_forex_news(pair_name: str) -> list:
     """Lấy tin tức Forex từ RSS feeds miễn phí."""
     td_sym = PAIRS[pair_name][0]  # "EUR/USD"
@@ -1013,8 +1200,22 @@ def main():
       <div class="fx-live-dot"></div>
       <div class="fx-header-logo">FOREX<span>AI</span></div>
       <div class="fx-badge">LIVE</div>
-      <div class="fx-header-right">Yahoo · Groq</div>
+      <div class="fx-header-right" id="fx-clock">--:--:--</div>
     </div>
+    <script>
+    (function() {
+      function tick() {
+        var el = document.getElementById('fx-clock');
+        if (el) {
+          var now = new Date();
+          el.textContent = now.toLocaleTimeString('en-GB', {hour12:false}) +
+            '.' + String(now.getMilliseconds()).padStart(3,'0');
+        }
+        requestAnimationFrame(tick);
+      }
+      tick();
+    })();
+    </script>
     """, unsafe_allow_html=True)
 
         # ── Selector nhanh ngay dưới header (luôn hiển thị, kể cả mobile) ──
@@ -1102,7 +1303,13 @@ def main():
         fmt = lambda v: f"{v:.5f}"
 
     # ══════════════════════════════════════════════
-    # LIVE DASHBOARD: cập nhật mỗi 3 giây
+    # WebSocket PRICE — độc lập iframe, không reset khi rerun
+    # ══════════════════════════════════════════════
+    ws_html = get_ws_component(pair)
+    components.html(ws_html, height=148, scrolling=False)
+
+    # ══════════════════════════════════════════════
+    # LIVE DASHBOARD: cập nhật chỉ báo mỗi 1 giây
     # ══════════════════════════════════════════════
     def live_dashboard():
         df_raw, data_src = fetch_ohlcv(pair, tf_label)
@@ -1127,10 +1334,10 @@ def main():
 
         last  = df.iloc[-1]
         prev  = df.iloc[-2]
-        rtp   = fetch_realtime_price(pair)
-        price = rtp if rtp else float(last["Close"])
+        # Giá realtime được hiển thị qua WS component (iframe)
+        # Ở đây chỉ dùng Close để tính signal & OHLC bar
+        price = float(last["Close"])
         chg   = (price - float(prev["Close"])) / float(prev["Close"]) * 100
-        now_s = datetime.now().strftime("%H:%M:%S")
 
         # âm thanh & telegram
         prev_act = st.session_state.get("prev_action","")
@@ -1146,32 +1353,20 @@ def main():
                 send_telegram(pair, sig)
         st.session_state["prev_action"] = sig["action"]
 
-        # ─── LIVE BAR ───
-        st.markdown(f"""
-        <div class="fx-livebar">
-          <div class="fx-livebar-dot"></div>
-          <span class="fx-livebar-txt">LIVE · {data_src.replace(" ⚡","")}</span>
-          <span class="fx-livebar-time">{now_s}</span>
-        </div>""", unsafe_allow_html=True)
-
-        # ─── PRICE CARD ───
-        chg_cls = "up" if chg >= 0 else "down"
-        chg_sym = "▲" if chg >= 0 else "▼"
-        rt_html = '<div class="fx-rt-badge">⚡ REALTIME</div>' if rtp else '<div style="height:4px"></div>'
-        st.markdown(f"""
-        <div class="fx-price-card">
-          <div>
-            <div class="fx-pair">{pair} · {tf_short}</div>
-            <div class="fx-price">{fmt(price)}</div>
-            <div class="fx-chg {chg_cls}">{chg_sym} {abs(chg):.3f}%</div>
-          </div>
-          <div class="fx-ohlc">
-            {rt_html}
-            <div class="fx-ohlc-row"><b>H</b> {fmt(float(last["High"]))}</div>
-            <div class="fx-ohlc-row"><b>L</b> {fmt(float(last["Low"]))}</div>
-            <div class="fx-ohlc-row"><b>ATR</b> {fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "—"}</div>
-          </div>
-        </div>""", unsafe_allow_html=True)
+        # ─── OHLC MINI BAR (từ candle data) ───
+        from datetime import datetime as _dt
+        now_s = _dt.now().strftime("%H:%M:%S")
+        atr_s = fmt(float(last["ATR"])) if not np.isnan(last["ATR"]) else "—"
+        st.markdown(
+            '<div class="fx-livebar" style="margin:0 0 4px 0">' +
+            '<div class="fx-livebar-dot"></div>' +
+            '<span class="fx-livebar-txt">' + data_src.replace(" ⚡","") + ' · ' + tf_short + '</span>' +
+            '<span style="margin-left:auto;font-family:monospace;font-size:10px;color:#475569">' +
+            'H:' + fmt(float(last["High"])) + '  L:' + fmt(float(last["Low"])) + '  ATR:' + atr_s +
+            '</span>' +
+            '</div>',
+            unsafe_allow_html=True
+        )
 
         # ─── SIGNAL CARDS ───
         def _sig_html(s, title, icon):
@@ -1308,7 +1503,7 @@ def main():
     # Auto-refresh mỗi 3s
     # Giá tức thì: ExchangeRate API (không cache)
     # OHLCV + chỉ báo: Twelve Data (cache 60s — tự hết hạn)
-    time.sleep(3)
+    time.sleep(1)
     st.rerun()
 
     # ── AI Phân tích (ngoài fragment vì chỉ chạy khi bấm nút) ──
